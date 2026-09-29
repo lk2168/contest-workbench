@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![测试](https://github.com/lk2168/diansai-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/lk2168/diansai-agent/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![status](https://img.shields.io/badge/status-v0.3-orange)
+![status](https://img.shields.io/badge/status-v0.4-orange)
 
 **给谁用**：参加电赛的在校学生，尤其是不熟悉 AI 工具的人。有网页界面、**队友零安装**就能用；
 Agent 每一步在做什么都显示出来；关键指标由本地算法计算、可以自己复核。
@@ -31,7 +31,21 @@ Agent 每一步在做什么都显示出来；关键指标由本地算法计算�
 
 ---
 
-## 快速开始
+## 两种用法
+
+**方式一：打包成 exe（给不想碰命令行的同学）**
+
+```bash
+pip install pyinstaller
+python scripts/build_exe.py          # 产出 dist/diansai-agent.exe（约 46 MB）
+```
+
+双击 exe 即用：自动起本地服务并打开浏览器，**不需要装 Python**。
+第一次用点右上角「设置」把 DeepSeek API Key 填进去就行（存在用户目录，不上传）。
+Exe 同目录下放 `data/题库/<分区>/` 就能读到自己的题库。
+> ⚠️ 冷启动要解包 46 MB，约 5–10 秒，属正常。
+
+**方式二：从源码跑（开发 / 想改代码）**
 
 ```bash
 # 0) 依赖

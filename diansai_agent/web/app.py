@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import queue
 import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -20,12 +21,15 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
-from ..config import OUT_DIR, REPO_ROOT, Config
+from ..config import OUT_DIR, REPO_ROOT, Config, save_user_config, user_env_file
 from ..domains import DOMAINS, get_domain, list_domains, prompt_text
 from ..llm import LLM
 from ..loop import Agent
 from ..tools import ERROR_PREFIX, TOOL_SCHEMAS, call_tool, is_error
 from ..tools.shiti import list_shiti, list_shiti_structured
+
+# 本机实测可用的模型（界面下拉用；仍允许手填别的）
+MODEL_OPTIONS = ["deepseek-flash", "deepseek-v4-pro"]
 
 # ── 平台自我介绍（也是首页"这个项目是什么"的事实来源，改这里就够）───────────
 PLATFORM = {
@@ -276,6 +280,149 @@ async def api_tune(file: UploadFile = File(...),
                         if report_md and (OUT_DIR / f"{path.stem}-调参报告.docx").exists() else None),
         "saved_data": name,
     })
+
+
+@app.get("/api/settings")
+def api_settings_get() -> JSONResponse:
+    """当前配置状态（Key 只回显打码后的样子，绝不返回明文）。"""
+    cfg = Config()
+    return JSONResponse({
+        "has_key": cfg.has_key,
+        "key_source": cfg.key_source(),
+        "masked_key": cfg.masked_key(),
+        "model": cfg.model,
+        "base_url": cfg.base_url,
+        "config_file": str(user_env_file()),
+        "out_dir": str(OUT_DIR),
+        "model_options": MODEL_OPTIONS,
+    })
+
+
+@app.post("/api/settings")
+def api_settings_post(payload: dict) -> JSONResponse:
+    """保存设置到用户配置文件（~/.diansai-agent/.env）。
+
+    字段语义：**不传** = 不改；**传空字符串** = 清空该项。
+    打包成 exe 后程序目录可能不可写，所以设置一律存用户目录。
+    """
+    p = payload or {}
+    unknown = set(p) - {"api_key", "model", "base_url"}
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"不认识的设置项：{', '.join(sorted(unknown))}")
+    key = p.get("api_key")
+    if key is not None and key.strip() and not key.strip().startswith("sk-"):
+        # 只做最基础的形状检查，真正能不能用要靠「测试连接」
+        raise HTTPException(status_code=400, detail="API Key 看起来不对（通常以 sk- 开头）")
+    try:
+        path = save_user_config(api_key=key, model=p.get("model"), base_url=p.get("base_url"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"写入配置失败：{type(e).__name__}: {e}")
+    cfg = Config()
+    return JSONResponse({"saved_to": str(path), "has_key": cfg.has_key,
+                         "key_source": cfg.key_source(), "masked_key": cfg.masked_key(),
+                         "model": cfg.model, "base_url": cfg.base_url})
+
+
+@app.post("/api/settings/test")
+def api_settings_test() -> JSONResponse:
+    """用当前 Key 真连一次模型列表，验证可用性（会消耗极少网络请求，不花 token）。"""
+    cfg = Config()
+    if not cfg.has_key:
+        return JSONResponse({"ok": False, "error": "还没填 API Key"})
+    try:
+        models = LLM(cfg).list_models()
+        ok = bool(models)
+        warn = ""
+        if ok and cfg.model not in models:
+            warn = f"当前模型 {cfg.model} 不在可用列表里，建议改成 {models[0]}"
+        return JSONResponse({"ok": ok, "models": models, "current_model": cfg.model, "warning": warn})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+
+@app.get("/api/selftest")
+def api_selftest() -> JSONResponse:
+    """一键自检：把"能不能用"逐项验一遍（打不开/跑不通时先跑它）。
+
+    特别包含 **Word 转换**这一项 —— 打包成 exe 后它最容易坏
+    （原来用子进程调转换脚本，冻结后 sys.executable 就是 exe 自己，会把程序再启动一遍）。
+    """
+    import tempfile
+    from ..config import BUNDLE_ROOT, FROZEN
+    from ..domains import prompt_text, get_domain
+
+    items: list[dict] = []
+
+    def add(name: str, ok: bool, detail: str = "") -> None:
+        items.append({"name": name, "ok": bool(ok), "detail": detail})
+
+    cfg = Config()
+    add("API Key 已配置", cfg.has_key, cfg.key_source())
+
+    d = get_domain("diansai")
+    try:
+        n = len(prompt_text(d, "system"))
+        add("提示词可读（随包资源）", n > 200, f"{n} 字符" + ("（打包模式）" if FROZEN else "（源码模式）"))
+    except Exception as e:
+        add("提示词可读（随包资源）", False, f"{type(e).__name__}: {e}")
+
+    try:
+        idx = STATIC_DIR / "index.html"
+        add("网页界面可读（随包资源）", idx.exists(), str(idx))
+    except Exception as e:
+        add("网页界面可读（随包资源）", False, str(e))
+
+    try:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        probe = OUT_DIR / ".selftest-probe"
+        probe.write_text("1", encoding="utf-8")
+        probe.unlink()
+        add("输出目录可写", True, str(OUT_DIR))
+    except Exception as e:
+        add("输出目录可写", False, f"{OUT_DIR}：{type(e).__name__}: {e}")
+
+    # Word 转换：真写一份小报告，看 .docx 有没有生成（打包后最易坏的一环）
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            md = Path(td) / "selftest.md"
+            docx = Path(td) / "selftest.docx"
+            md.write_text("# 自检\n\n| 项目 | 值 |\n|---|---|\n| 中文 | 正常 |\n", encoding="utf-8")
+            from ..tools.report import _to_docx
+            ok, err = _to_docx(md, docx)
+            kb = round(docx.stat().st_size / 1024) if docx.exists() else 0
+            add("Word 转换可用（进程内）", ok and kb > 0, f"{kb} KB" if ok else err)
+    except Exception as e:
+        add("Word 转换可用（进程内）", False, f"{type(e).__name__}: {e}")
+
+    # 示例数据（随包资源）
+    try:
+        s = BUNDLE_ROOT / "samples" / "step-response-sample.csv"
+        add("示例数据可读（随包资源）", s.exists(), f"{s}（{s.stat().st_size} 字节）" if s.exists() else str(s))
+    except Exception as e:
+        add("示例数据可读（随包资源）", False, str(e))
+
+    # 调参计算（numpy/matplotlib 在冻结环境下是否可用）
+    try:
+        from ..tools.tuning import analyze
+        import numpy as np
+        t = np.arange(0, 3, 0.002)
+        y = 1 - np.exp(-6 * t)
+        m = analyze(t, y, target=1.0)
+        add("调参计算可用（numpy）", m.y_ss > 0.9, f"稳态 {m.y_ss:.4f}")
+    except Exception as e:
+        add("调参计算可用（numpy）", False, f"{type(e).__name__}: {e}")
+
+    # 题库（不随包走，因版权；没有属正常）
+    try:
+        items_kb = list_shiti_structured()
+        add("题库已就绪（可选）", True,
+            f"{len(items_kb)} 道题" if items_kb else "还没建题库 —— 用 scripts/fetch_history.py 重建（不影响其余功能）")
+    except Exception as e:
+        add("题库已就绪（可选）", False, str(e))
+
+    return JSONResponse({"frozen": FROZEN, "python": sys.version.split()[0],
+                         "config_file": str(user_env_file()), "out_dir": str(OUT_DIR),
+                         "items": items, "all_ok": all(i["ok"] for i in items)})
 
 
 @app.get("/api/reports")

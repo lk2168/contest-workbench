@@ -7,9 +7,18 @@
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
+
+# ★ 隔离：把配置目录与 DSH 凭据路径都指到临时目录，测试**绝不碰你真实的配置文件**，
+#   并显式清空环境变量，让"有没有 Key"在测试里是确定性的。
+_TMP = Path(tempfile.mkdtemp(prefix="diansai-web-test-"))
+os.environ["DIANSAI_CONFIG_DIR"] = str(_TMP)
+os.environ["DSH_HOME"] = str(_TMP / "dsh-home")
+os.environ["DEEPSEEK_API_KEY"] = ""
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -159,6 +168,55 @@ def main() -> int:
     print("\n== 5. 报告列表 ==")
     r = client.get("/api/reports").json()
     check("报告列表可用（items 是列表）", isinstance(r.get("items"), list))
+
+    print("\n== 5b. 设置：填 API Key / 换模型（小白可用性的关键）==")
+    s0 = client.get("/api/settings").json()
+    check("设置接口可用（含 config_file / out_dir / 可选模型）",
+          all(k in s0 for k in ("has_key", "key_source", "masked_key", "model",
+                                "config_file", "out_dir", "model_options")))
+    check("配置写进**用户目录**（打包后程序目录可能不可写）",
+          str(_TMP) in s0["config_file"], s0["config_file"])
+    check("未配置时 firstRun 引导会显示（接口如实报告 has_key）", s0["has_key"] is False,
+          f"has_key={s0['has_key']} source={s0['key_source']}")
+
+    bad = client.post("/api/settings", json={"api_key": "不是key"})
+    check("形状不对的 Key → 400", bad.status_code == 400, str(bad.status_code))
+    unknown = client.post("/api/settings", json={"nope": 1})
+    check("不认识的设置项 → 400", unknown.status_code == 400, str(unknown.status_code))
+
+    FAKE = "sk-test-1234567890abcdefghij"
+    saved = client.post("/api/settings", json={"api_key": FAKE, "model": "deepseek-v4-pro"})
+    check("保存 Key + 模型 → 200", saved.status_code == 200, saved.text[:150])
+    env_file = Path(saved.json()["saved_to"])
+    check("配置文件已写到用户目录", env_file.exists() and str(_TMP) in str(env_file), str(env_file))
+    check("文件里确实写入了（供下次启动生效）", FAKE in env_file.read_text(encoding="utf-8"))
+
+    s1 = client.get("/api/settings").json()
+    check("保存后 has_key=True", s1["has_key"] is True)
+    check("★ 接口只回显打码 Key，不泄露明文",
+          s1["masked_key"] != FAKE and "*" in s1["masked_key"] and FAKE not in saved.text,
+          s1["masked_key"])
+    check("模型已切换", s1["model"] == "deepseek-v4-pro", s1["model"])
+    check("Key 来源如实标注为用户配置文件", "用户配置文件" in s1["key_source"], s1["key_source"])
+
+    client.post("/api/settings", json={"api_key": ""})     # 空字符串 = 清空
+    check("传空字符串可清空该项（不残留旧 Key）",
+          FAKE not in env_file.read_text(encoding="utf-8"))
+    t = client.post("/api/settings/test").json()
+    check("未配置时「测试连接」给出人话提示而不是异常",
+          isinstance(t, dict) and ("ok" in t))
+
+    print("\n== 5c. 自检接口（打包后最易坏的一环）==")
+    st = client.get("/api/selftest").json()
+    check("自检返回结构完整", all(k in st for k in ("frozen", "python", "items", "all_ok", "out_dir")))
+    by_name = {i["name"]: i for i in st["items"]}
+    # 这几项**不依赖 API Key**，任何环境都必须过（CI 也一样）
+    for must in ("提示词可读（随包资源）", "网页界面可读（随包资源）", "输出目录可写",
+                 "Word 转换可用（进程内）", "调参计算可用（numpy）"):
+        it = by_name.get(must)
+        check(f"自检项通过：{must}", bool(it and it["ok"]), (it or {}).get("detail", "缺少该项"))
+    check("自检项包含示例数据与题库（可选）", "示例数据可读（随包资源）" in by_name and "题库已就绪（可选）" in by_name)
+    check("源码模式下 frozen=False", st["frozen"] is False)
 
     print("\n== 6. 分析接口（演示模式，不调模型）==")
     # 演示模式只需要 file/label —— 没题库时用占位值，接口本身仍应正常返回 SSE

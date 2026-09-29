@@ -11,3 +11,10 @@ venv/
 
 # 提交信息临时文件（我用 -F 传多行信息时会产生，别提交）
 .git-msg-*.txt
+
+# PyInstaller 打包产物：exe 是二进制，不进版本库
+# （要分发给用户就发到 GitHub Release，而不是提交进仓库）
+build/
+dist/
+*.spec
+

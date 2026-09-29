@@ -281,23 +281,42 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
   </div>
   <div class="db">
     <div class="line">
+      <label for="apiKey">DeepSeek API Key</label>
+      <div class="row" style="gap:var(--s2);align-items:center">
+        <input type="password" id="apiKey" placeholder="sk-……" autocomplete="off" style="flex:1;min-width:150px" />
+        <button class="quiet" id="btnSaveKey">保存</button>
+        <button class="quiet" id="btnTest">测试连接</button>
+      </div>
+      <span class="hint" id="keyStatus">读取中…</span>
+      <span class="hint">在 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a> 申请；
+        保存在本机用户目录，不上传、不进版本库。</span>
+    </div>
+    <div class="line">
+      <label for="modelSel">模型</label>
+      <div class="row" style="gap:var(--s2);align-items:center">
+        <select id="modelSel" style="flex:1;min-width:150px"></select>
+        <button class="quiet" id="btnSaveModel">保存</button>
+      </div>
+      <span class="hint">两个都实测可用；<code>deepseek-flash</code> 便宜快，<code>deepseek-v4-pro</code> 更强更贵。</span>
+    </div>
+    <div class="line">
       <label for="steps">最多步数</label>
       <input type="number" id="steps" min="2" max="30" value="12" style="width:96px" />
       <span class="hint">允许 Agent 最多思考几步。越大越可能想周全，也越慢、越费额度；默认 12 够用。</span>
-    </div>
-    <div class="line">
-      <label>模型</label>
-      <div id="modelName" class="muted">读取中</div>
-      <span class="hint">在 <code>.env</code> 里改 <code>DEEPSEEK_MODEL</code>，或启动时加 <code>--model</code>。</span>
     </div>
     <div class="line">
       <label for="demoMode"><input type="checkbox" id="demoMode" /> 只看提示词（不调用模型）</label>
       <span class="hint">勾选后只展示将发给模型的内容，不消耗额度，适合检查提示词。</span>
     </div>
     <div class="line">
-      <label>API Key 来源</label>
-      <div id="keySource" class="muted">读取中</div>
-      <span class="hint">只在本地读取，不打印、不进版本库。</span>
+      <label>文件位置</label>
+      <div class="muted" style="font-size:12.5px;word-break:break-all" id="paths">读取中…</div>
+      <span class="hint">配置文件里存的是明文 Key（本机私有）；报告与上传的数据在上面的输出目录。</span>
+    </div>
+    <div class="line">
+      <label>出问题先自检</label>
+      <div><button class="quiet" id="btnSelfTest">运行自检</button></div>
+      <span class="hint" id="selfTestOut">逐项检查：Key / 提示词 / 界面资源 / 输出目录 / Word 转换 / 示例数据 / 计算库 / 题库。</span>
     </div>
   </div>
 </aside>
@@ -305,6 +324,11 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
 <main>
   <!-- 视图一：首页（焦点＝电赛卡片） -->
   <section id="viewHome" class="wrap">
+    <!-- 第一次用的人：这里给一条明确的引导（配置好之后自动消失） -->
+    <div id="firstRun" class="note warn" hidden style="margin-top:var(--s5);align-items:center">
+      <span>还没配置 API Key，Agent 无法调用模型。</span>
+      <button class="quiet" id="btnOpenSettings" style="margin-left:auto">现在填</button>
+    </div>
     <div class="hero">
       <div class="eyebrow">开源 · 本地运行 · 数据不上传</div>
       <h1 style="margin-top:10px">把竞赛赛题，变成能照着干的方案</h1>
@@ -484,6 +508,66 @@ const P={
 const ic=(n,s=16)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:${s}px;height:${s}px"><path d="${P[n]||P.file}"/></svg>`;
 
 const $=id=>document.getElementById(id);
+
+/* ── 设置：读 / 存 / 测 API Key ── */
+async function loadSettings(){
+  try{
+    const s=await(await api("/api/settings")).json();
+    $("modelSel").innerHTML=(s.model_options||[]).concat([s.model]).filter((v,i,a)=>v&&a.indexOf(v)===i)
+      .map(m=>`<option value="${esc(m)}" ${m===s.model?"selected":""}>${esc(m)}</option>`).join("");
+    $("keyStatus").innerHTML = s.has_key
+      ? `已配置：<code>${esc(s.masked_key)}</code>　来源：${esc(s.key_source)}`
+      : '还没配置。填好 Key 点「保存」，再点「测试连接」验证。';
+    $("paths").innerHTML=`配置文件 <code>${esc(s.config_file)}</code><br>输出目录 <code>${esc(s.out_dir)}</code>`;
+    $("firstRun").hidden = !!s.has_key;
+  }catch(e){ $("keyStatus").textContent="读取设置失败："+e.message }
+}
+$("btnSaveKey").addEventListener("click",async()=>{
+  const v=$("apiKey").value.trim();
+  if(!v){ $("keyStatus").textContent="请先粘贴 Key"; return }
+  $("keyStatus").textContent="保存中…";
+  try{
+    const r=await(await api("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({api_key:v})})).json();
+    $("apiKey").value="";
+    $("keyStatus").textContent=`已保存到 ${r.saved_to}　现在可以点「测试连接」`;
+    await loadSettings();
+  }catch(e){ $("keyStatus").textContent="保存失败："+e.message }
+});
+$("btnSaveModel").addEventListener("click",async()=>{
+  $("keyStatus").textContent="保存模型…";
+  try{
+    await api("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:$("modelSel").value})});
+    $("keyStatus").textContent="模型已保存："+$("modelSel").value;
+  }catch(e){ $("keyStatus").textContent="保存失败："+e.message }
+});
+$("btnTest").addEventListener("click",async()=>{
+  $("keyStatus").textContent="正在连接 DeepSeek…";
+  try{
+    const r=await(await api("/api/settings/test",{method:"POST"})).json();
+    if(r.ok){
+      $("keyStatus").innerHTML=`连接成功，可用模型：${esc((r.models||[]).join(" / "))}`
+        + (r.warning?`　<span style="color:#B54708">${esc(r.warning)}</span>`:"");
+    }else{
+      $("keyStatus").innerHTML=`<span style="color:#B42318">连接失败：${esc(r.error||"未知原因")}</span>`;
+    }
+  }catch(e){ $("keyStatus").textContent="测试失败："+e.message }
+});
+$("btnOpenSettings").addEventListener("click",()=>openSettings(true));
+$("btnSelfTest").addEventListener("click",async()=>{
+  const out=$("selfTestOut");
+  out.textContent="正在自检（含真写一份 Word，可能几秒）…";
+  try{
+    const r=await(await api("/api/selftest")).json();
+    const lines=(r.items||[]).map(i=>`${i.ok?"✓":"✗"} ${i.name}：${i.detail||""}`);
+    out.innerHTML=`<b>${r.all_ok?"全部通过":"有项目未通过"}</b>　`
+      +`运行方式：${r.frozen?"打包 exe":"源码"}　Python ${esc(r.python)}<br>`
+      +`输出目录 <code>${esc(r.out_dir)}</code><br>`
+      +lines.map(l=>esc(l)).join("<br>");
+  }catch(e){ out.textContent="自检失败："+e.message }
+});
+
 const state={domains:[],items:[],cur:null,domain:null,
   steps:+(localStorage.getItem("steps")||12), demo:localStorage.getItem("demo")==="1"};
 $("steps").value=state.steps; $("demoMode").checked=state.demo;
@@ -571,6 +655,7 @@ const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok)throw new Error((await 
       ["题库真题",sl.count+" 道"],["年份批次",(sl.years||[]).length+" 批"],
       ["可用工具",h.tools.length+" 个"],["竞赛分区",usable+" / "+d.domains.length+" 可用"]
     ].map(([k,v])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+    await loadSettings();
   }catch(e){ $("domainCards").innerHTML=`<div class="note err">${ic("alert")}加载失败：${esc(e.message)}</div>`; }
 })();
 $("goDiansai").addEventListener("click",()=>openDomain("diansai"));
