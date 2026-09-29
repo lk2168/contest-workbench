@@ -60,6 +60,9 @@ def main() -> int:
           "--b600:" in html and "--sh-md:" in html and "var(--r-card)" in html)
     check("网格子项有 min-width:0 防 grid blowout",
           "minmax(0,1fr)" in html and ".work>*{min-width:0}" in html.replace(" ", ""))
+    check("报告预览区固定在页面里（★ 不能塞进 hidden 的调参面板，否则点了没反应）",
+          'id="reportView"' in html and '$("panelTune").appendChild' not in html)
+    check("支持 ?report= 深链预览报告", 'get("report")' in html and "showReport(" in html)
     emojis = ["🔧", "↳", "✅", "❌", "⚙", "🎯", "🚧"]
     hit = [e for e in emojis if e in html]
     check("界面零 emoji（设计规范：不用字符当图标）", not hit, "仍含：" + "".join(hit))

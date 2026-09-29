@@ -223,8 +223,9 @@ ul.files .fi{width:32px;height:32px;border-radius:8px;display:grid;place-items:c
   background:var(--g100);color:var(--ink2)}
 ul.files .fi svg{width:16px;height:16px}
 ul.files .nm{font-weight:500}
-ul.files .meta{margin-left:auto;display:flex;align-items:center;gap:var(--s4);color:var(--ink3);font-size:12.5px;
+ul.files .meta{display:flex;align-items:center;gap:var(--s4);color:var(--ink3);font-size:12.5px;
   font-variant-numeric:tabular-nums}
+ul.files .acts{display:flex;align-items:center;gap:var(--s4);margin-left:var(--s4)}
 
 /* ── 设置抽屉（右侧滑入）── */
 .scrim{position:fixed;inset:0;background:rgba(16,24,40,.4);opacity:0;pointer-events:none;
@@ -449,6 +450,8 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
         </div>
       </div>
       <ul class="files" id="files"></ul>
+      <!-- 预览区固定在分区页里（不能塞进 hidden 的调参面板，否则点了没反应） -->
+      <div id="reportView" style="margin-top:var(--s5)"></div>
     </div>
   </section>
 </main>
@@ -707,36 +710,55 @@ async function loadFiles(){
     $("filesStatus").textContent="共 "+d.items.length+" 个文件";
     $("files").innerHTML=d.items.map(x=>{
       const [i,label]=KIND[x.kind]||["file",x.kind];
-      const act=(x.kind==="md"?`<a href="#" data-md="${esc(x.name)}">预览</a>`:"")
-               +(x.kind==="png"?`<a href="#" data-img="${esc(x.name)}">查看</a>`:"")
-               +`<a href="/api/file/${encodeURIComponent(x.name)}">下载</a>`;
+      const acts=(x.kind==="md"?`<a href="#" data-md="${esc(x.name)}">预览</a>`:"")
+                +(x.kind==="png"?`<a href="#" data-img="${esc(x.name)}">查看</a>`:"")
+                +`<a href="/api/file/${encodeURIComponent(x.name)}">下载</a>`;
       return `<li><span class="fi">${ic(i)}</span>
         <span class="nm">${esc(x.name)}</span>
         <span class="pill neutral">${label}</span>
-        <span class="meta"><span>${(x.size/1024).toFixed(1)} KB</span><span>${x.mtime}</span><span>${act}</span></span></li>`;
+        <span class="meta"><span>${(x.size/1024).toFixed(1)} KB</span><span>${x.mtime}</span></span>
+        <span class="acts">${acts}</span></li>`;
     }).join("")||`<li><div class="empty">${ic("box")}<div>还没有产物，先去上面跑一次</div></div></li>`;
+    const want=new URLSearchParams(location.search).get("report");
+    if(want&&!shownDeepLink){ shownDeepLink=true; showReport(want); }
   }catch(e){$("filesStatus").textContent="列表失败："+e.message}
 }
-$("refresh").addEventListener("click",loadFiles);
-$("files").addEventListener("click",async e=>{
-  const a=e.target.closest("a"); if(!a) return;
-  const box=()=>{let el=$("reportView"); if(!el){el=document.createElement("div");el.id="reportView";$("panelTune").appendChild(el)} return el};
-  if(a.dataset.md){e.preventDefault();
-    const d=await(await api("/api/file-text/"+encodeURIComponent(a.dataset.md))).json();
-    box().innerHTML=`<div class="card pad-lg article">${md(d.text)}</div>`;
-    box().scrollIntoView({behavior:"smooth",block:"start"});
-  }
-  if(a.dataset.img){e.preventDefault();
-    box().innerHTML=`<div class="card pad-lg"><h3 style="margin-bottom:var(--s3)">${esc(a.dataset.img)}</h3>
-      <img class="chart" src="/api/file/${encodeURIComponent(a.dataset.img)}?t=${Date.now()}"></div>`;
-    box().scrollIntoView({behavior:"smooth",block:"start"});
-  }
-});
-if(location.hash.length>1){
-  const id=location.hash.slice(1);
-  const t=setInterval(()=>{ if(state.domains.length){clearInterval(t);
-    if(state.domains.some(x=>x.id===id&&x.implemented)) openDomain(id);} },120);
+let shownDeepLink=false;
+/* 预览报告/图片：渲染到固定的 #reportView（在分区页里），并滚过去 */
+async function showReport(name,asImage){
+  if(!name) return;
+  const rv=$("reportView");
+  rv.innerHTML=`<div class="card pad-lg"><span class="muted">正在读取 ${esc(name)}…</span></div>`;
+  rv.scrollIntoView({behavior:"smooth",block:"start"});
+  try{
+    if(asImage===undefined) asImage=/\.(png|jpe?g|webp)$/i.test(name);
+    if(asImage){
+      rv.innerHTML=`<div class="card pad-lg"><h3 style="margin-bottom:var(--s3)">${esc(name)}</h3>
+        <img class="chart" src="/api/file/${encodeURIComponent(name)}?t=${Date.now()}" alt="${esc(name)}"></div>`;
+    }else{
+      const d=await(await api("/api/file-text/"+encodeURIComponent(name))).json();
+      rv.innerHTML=`<div class="card pad-lg article">${md(d.text)}</div>`;
+    }
+  }catch(e){ rv.innerHTML=`<div class="note err">${ic("alert")}${esc(e.message)}</div>` }
 }
+$("refresh").addEventListener("click",loadFiles);
+$("files").addEventListener("click",e=>{
+  const a=e.target.closest("a"); if(!a) return;
+  if(a.dataset.md){ e.preventDefault(); showReport(a.dataset.md,false) }
+  if(a.dataset.img){ e.preventDefault(); showReport(a.dataset.img,true) }
+});
+// 深链：#分区 直接进分区页；?report=文件名 直接预览该报告（方便把链接发给队友）
+(function deepLink(){
+  const id=location.hash.length>1?location.hash.slice(1):"";
+  const rep=new URLSearchParams(location.search).get("report");
+  if(!id&&!rep) return;
+  const t=setInterval(()=>{
+    if(!state.domains.length) return;
+    clearInterval(t);
+    const target=id&&state.domains.some(x=>x.id===id&&x.implemented)?id:"diansai";
+    openDomain(target);
+  },120);
+})();
 </script>
 </body>
 </html>
