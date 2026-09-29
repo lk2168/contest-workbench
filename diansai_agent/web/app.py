@@ -78,7 +78,8 @@ def _list_report_files() -> list[dict]:
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    return HTMLResponse(html)
+    # 不缓存首页：否则本地改完前端、浏览器还拿旧页面（改完刷新即可生效）
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 @app.get("/api/health")
