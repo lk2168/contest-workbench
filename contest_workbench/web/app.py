@@ -127,13 +127,54 @@ def api_shiti(domain: str = "diansai") -> JSONResponse:
 
 @app.get("/api/shiti-list")
 def api_shiti_list(domain: str = "diansai") -> JSONResponse:
-    """结构化题目清单：年份/批次 + 题号 + 题名 + 文件名（网页端两级选择用）。"""
+    """结构化题目清单：年份/批次 + 题号 + 题名 + 文件名（网页端两级选择用）。
+
+    额外返回 `searched`（搜过哪些目录）与 `recommended`（推荐放哪）——
+    打包成 exe 后"题库在哪"对用户是黑盒，界面必须把它讲清楚。
+    """
     import os
     os.environ["CONTEST_DOMAIN"] = domain
     _domain_or_400(domain)
+    from ..tools.shiti import searched_dirs
     items = list_shiti_structured()
     years = sorted({x["year"] for x in items}, reverse=True)
-    return JSONResponse({"items": items, "years": years, "count": len(items)})
+    cands = [str(p) for p in searched_dirs()]
+    return JSONResponse({"items": items, "years": years, "count": len(items),
+                         "searched": cands, "recommended": cands[0] if cands else ""})
+
+
+@app.post("/api/reveal")
+def api_reveal(payload: dict) -> JSONResponse:
+    """在文件管理器里打开某个目录（题库/输出/配置），并保证它存在。
+
+    给"不懂命令行"的用户用：界面上点一下就看到该把题库放哪。仅本机可用。
+    """
+    import os
+    import subprocess as _sp
+    from ..config import OUT_DIR, user_dir
+    from ..domains import get_domain
+
+    what = ((payload or {}).get("what") or "").strip()
+    if what == "kb":
+        sub = get_domain((payload or {}).get("domain") or "diansai").kb_subdir
+        d = user_dir() / "题库" / sub
+    elif what == "out":
+        d = OUT_DIR
+    elif what == "config":
+        d = user_dir()
+    else:
+        raise HTTPException(status_code=400, detail="what 只能是 kb / out / config")
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        if sys.platform.startswith("win"):
+            _sp.Popen(["explorer", str(d)])
+        elif sys.platform == "darwin":
+            _sp.Popen(["open", str(d)])
+        else:
+            _sp.Popen(["xdg-open", str(d)])
+        return JSONResponse({"ok": True, "opened": str(d)})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}", "path": str(d)})
 
 
 @app.get("/api/shiti-detail")

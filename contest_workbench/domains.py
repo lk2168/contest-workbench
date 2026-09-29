@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-KB_ROOT = REPO_ROOT / "data" / "题库"
+KB_ROOT = REPO_ROOT / "data" / "题库"   # 兼容旧引用；实际查找走 kb_candidates()
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 
 
@@ -37,7 +37,42 @@ class Domain:
     note: str = ""                # 未实现分区：说明需要补什么
 
     def kb_dir(self) -> Path:
-        return KB_ROOT / self.kb_subdir
+        """★ 第一个存在的题库目录；都不存在时返回**推荐位置**（用户目录）。
+
+        为什么不是单一路径：打包成 exe 后，"题库放哪"对用户是黑盒 ——
+        下载来的 exe 旁边没有题库，直接说"没找到"会让人一脸懵。所以按下面的顺序找，
+        并且把搜过的位置报给界面显示（见 kb_candidates()）。
+        """
+        for d in kb_candidates(self.kb_subdir):
+            if d.exists() and any(d.rglob("*.md")):
+                return d
+        return kb_candidates(self.kb_subdir)[-1]     # 推荐位置：用户目录
+
+
+def kb_candidates(subdir: str) -> list[Path]:
+    """题库的候选目录（按优先级）。界面会把这份清单显示给用户，告诉他放哪。
+
+    顺序：
+      1. 用户目录 ~/.contest-workbench/题库/<分区>   ← ★ 下载 exe 的人放这里（推荐）
+      2. exe/仓库 同级的 data/题库/<分区>            ← 开发者与"把题库放程序旁边"的人
+      3. 程序目录的上一层 data/题库/<分区>          ← exe 在 dist/ 里时也能被找到
+      4. 当前工作目录 data/题库/<分区>
+    """
+    from .config import APP_DIR, user_dir
+    out: list[Path] = [user_dir() / "题库" / subdir,
+                       APP_DIR / "data" / "题库" / subdir,
+                       APP_DIR.parent / "data" / "题库" / subdir,
+                       Path.cwd() / "data" / "题库" / subdir]
+    seen, uniq = set(), []
+    for p in out:
+        try:
+            rp = p.resolve()
+        except Exception:
+            continue
+        if rp not in seen:
+            seen.add(rp)
+            uniq.append(p)
+    return uniq
 
 
 # 通用工具：所有分区都能用

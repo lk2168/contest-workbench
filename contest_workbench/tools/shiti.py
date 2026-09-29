@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 
 from ..config import env_first
-from ..domains import KB_ROOT, get_domain
+from ..domains import KB_ROOT, get_domain, kb_candidates
 
 
 def current_domain_id() -> str:
@@ -23,16 +23,22 @@ def current_domain_id() -> str:
     return (env_first("CONTEST_DOMAIN", "DIANSAI_DOMAIN") or "diansai").strip().lower()
 
 
+def searched_dirs() -> list[Path]:
+    """当前分区**搜过哪些目录**（按优先级）。界面用它告诉用户"题库该放哪"。"""
+    try:
+        sub = get_domain(current_domain_id()).kb_subdir
+    except KeyError:
+        sub = current_domain_id()
+    return kb_candidates(sub)
+
+
 def kb_dirs() -> list[Path]:
     """当前分区的题库目录（可多个，按顺序合并、按「年份目录+文件名」去重）。
 
-    顺序：① 分区目录 ② 环境变量追加的外部目录 ③ 旧的"题库根目录平铺"布局（兼容老用户）
+    顺序：① 候选目录里**存在的**（用户目录 / 程序旁 / 上一层 / 当前目录）
+          ② 环境变量追加的外部目录  ③ 旧的"题库根目录平铺"布局（兼容老用户）
     """
-    dirs: list[Path] = []
-    try:
-        dirs.append(get_domain(current_domain_id()).kb_dir())
-    except KeyError:
-        dirs.append(KB_ROOT / current_domain_id())
+    dirs: list[Path] = [d for d in searched_dirs() if d.exists()]
     env = env_first("CONTEST_KB", "DIANSAI_KB")
     if env:
         dirs.append(Path(env))
@@ -104,13 +110,17 @@ def list_shiti() -> str:
     """列出题库里的所有赛题（按年份分组）。"""
     files = _all_md()
     if not files:
-        dirs = kb_dirs()
-        where = "、".join(str(d) for d in dirs) if dirs else "（该分区还没有题库目录）"
+        dirs = searched_dirs()
+        rec = dirs[0] if dirs else "（未知）"
         return (
-            f"[错误] 题库为空。已查找：{where}\n"
+            "[错误] 题库为空。已查找（按优先级）：\n"
+            + "\n".join(f"  {i+1}. {d}" for i, d in enumerate(dirs))
+            + f"\n★ 推荐放这里：{rec}\n"
+            "  目录结构：<上面的目录>/<年份批次>/<题号>题_<题名>.md\n"
             "重建方式（任选其一）：\n"
             "  1) python scripts/fetch_history.py                    # 从公开来源批量拉历年赛题\n"
             "  2) python scripts/extract_shiti.py <你的PDF目录> <目标目录>   # 把自己的 PDF 转成文本\n"
+            "  3) 网页端「设置 → 打开题库目录」，把整理好的 .md 丢进去\n"
             "注意：赛题原文因版权不进本仓库，需在你本地自行准备（见 NOTICE.md）。"
         )
     groups: dict[str, list[str]] = {}

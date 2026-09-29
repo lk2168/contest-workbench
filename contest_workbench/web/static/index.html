@@ -415,6 +415,27 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
           </div>
           <div class="readout" id="preview">选好题目后这里显示题面。</div>
         </div>
+        <!-- 没找到题库时的引导（打包成 exe 后"题库放哪"对用户是黑盒，必须讲清楚） -->
+        <div class="card" id="kbHelp" hidden>
+          <div class="note warn" style="margin-bottom:var(--s4)">
+            <span>还没找到题库 —— 本程序**不含**赛题（版权原因），需要你放进来。</span>
+          </div>
+          <h3 style="margin-bottom:var(--s2)">把整理好的赛题文件放到其中一个目录</h3>
+          <p class="muted" style="font-size:13px">
+            目录结构：<code>&lt;题库目录&gt;/&lt;年份批次&gt;/&lt;题号&gt;题_&lt;题名&gt;.md</code>，例如
+            <code>2026-省赛/H题_车载平衡滚球运动控制系统.md</code>
+          </p>
+          <div class="readout" id="kbPaths" style="margin-top:var(--s3)"></div>
+          <div class="row-actions" style="margin-top:var(--s4)">
+            <button class="primary" id="btnOpenKb">打开题库目录（放文件进去）</button>
+            <button class="ghost" id="btnRescan">放好了，重新扫描</button>
+            <button class="ghost" id="btnOpenOut">打开输出目录</button>
+          </div>
+          <p class="muted" style="font-size:12.5px;margin-top:var(--s3)">
+            想自动补齐历年题库：在源码目录里跑 <code>python scripts/fetch_history.py</code>；
+            或用自己的 PDF：<code>python scripts/extract_shiti.py &lt;PDF目录&gt; &lt;目标目录&gt;</code>。
+          </p>
+        </div>
       </div>
 
       <div class="stack">
@@ -696,9 +717,32 @@ async function loadShitiList(){
   $("preview").textContent="正在读取题库…";
   const d=await(await api("/api/shiti-list?domain="+encodeURIComponent(state.domain.id))).json();
   state.items=d.items||[];
+  state.kbSearched=d.searched||[];
+  state.kbRecommended=d.recommended||"";
   $("year").innerHTML=(d.years||[]).map(y=>`<option value="${y}">${y}</option>`).join("");
   fillShitiSelect();
+  // 题库为空 → 把"该放哪"讲清楚（打包 exe 后这是最常见的困惑）
+  const empty=(state.items.length===0);
+  $("kbHelp").hidden=!empty;
+  if(empty){
+    $("kbPaths").innerHTML="按优先级搜索了这些位置：\n"
+      + state.kbSearched.map((p,i)=>`${i+1}. ${p}${i===0?"　★ 推荐（点下面的按钮会创建）":""}`).join("\n");
+  }
 }
+$("btnOpenKb").addEventListener("click",async()=>{
+  try{
+    const r=await(await api("/api/reveal",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({what:"kb",domain:state.domain?state.domain.id:"diansai"})})).json();
+    $("preview").textContent = r.ok
+      ? `已在文件管理器里打开：\n${r.opened}\n\n把 .md 文件放进去后，点「放好了，重新扫描」。`
+      : `打开失败：${r.error}（路径：${r.path}）`;
+  }catch(e){ $("preview").textContent="打开失败："+e.message }
+});
+$("btnOpenOut").addEventListener("click",async()=>{
+  try{ await api("/api/reveal",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({what:"out"})}); }catch(e){}
+});
+$("btnRescan").addEventListener("click",async()=>{ await loadShitiList(); loadFiles(); });
 function fillShitiSelect(){
   const y=$("year").value, list=state.items.filter(x=>!y||x.year===y);
   $("shitiSel").innerHTML=list.map(x=>`<option value="${esc(x.file)}">${esc(x.code)} 题 · ${esc(x.title)}</option>`).join("")
