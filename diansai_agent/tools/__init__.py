@@ -10,6 +10,7 @@ import json
 
 from .shiti import list_shiti, read_shiti, search_qa, search_tiku
 from .report import write_report
+from .tuning import analyze_step_data
 
 # 工具名 -> 执行函数
 _FUNCS = {
@@ -18,6 +19,7 @@ _FUNCS = {
     "search_qa": lambda **kw: search_qa(**kw),
     "search_tiku": lambda **kw: search_tiku(**kw),
     "write_report": lambda **kw: write_report(**kw),
+    "analyze_step_data": lambda **kw: analyze_step_data(**kw),
 }
 
 # 给模型看的说明书
@@ -72,6 +74,22 @@ TOOL_SCHEMAS = [
                     "max_chars": {"type": "integer", "description": "最多返回多少字符，默认 6000"},
                 },
                 "required": ["keyword"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_step_data",
+            "description": "分析阶跃响应数据（CSV/TXT/串口日志），算出超调量、峰值时间、上升时间、调节时间、稳态误差，画出曲线图，并按规则给出 PID 调整建议。整定 PID、判断指标是否达标时用它。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "数据文件路径（两列：时间,幅值；也支持带时间戳的串口日志）"},
+                    "target": {"type": "number", "description": "目标值（给了才算稳态误差）"},
+                    "title": {"type": "string", "description": "图与标题的名字，可省略"},
+                },
+                "required": ["path"],
             },
         },
     },

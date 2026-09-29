@@ -48,10 +48,23 @@ def main() -> int:
     n_years = listing.count("【")
     check(f"覆盖多个年份/批次（{n_years} 个）", n_years >= 1)
 
-    print("\n== 3. 四个工具 ==")
+    print("\n== 3. 工具与分区 ==")
     names = [t["function"]["name"] for t in TOOL_SCHEMAS]
-    for want in ("list_shiti", "read_shiti", "search_qa", "search_tiku", "write_report"):
+    for want in ("list_shiti", "read_shiti", "search_qa", "search_tiku",
+                 "write_report", "analyze_step_data"):
         check(f"工具已注册：{want}", want in names)
+
+    from diansai_agent.domains import DOMAINS, get_domain, list_domains, prompt_text
+    check("分区表里有 diansai 且标记为已实现", get_domain("diansai").implemented)
+    check("分区清单能生成", "diansai" in list_domains() and "mathmodel" in list_domains())
+    try:
+        get_domain("不存在的分区")
+        check("未知分区应报错", False, "居然没报错")
+    except KeyError:
+        check("未知分区报错", True)
+    for which in ("system", "analyze", "tune"):
+        check(f"分区提示词可读：{which}", len(prompt_text(get_domain("diansai"), which)) > 200)
+    check("规划中分区的 tune 模板为 None", DOMAINS["mathmodel"].tune_template is None)
 
     r = call_tool("read_shiti", {"name": "H", "max_chars": 1500})
     check("read_shiti 能读到正文", "错误" not in r[:8] and len(r) > 300, r[:80])

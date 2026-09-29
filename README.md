@@ -5,7 +5,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![status](https://img.shields.io/badge/status-v0.1-orange)
+![status](https://img.shields.io/badge/status-v0.2-orange)
+![domains](https://img.shields.io/badge/domains-%E7%94%B5%E8%B5%9B(%E5%B7%B2%E5%AE%9E%E7%8E%B0)%20%2B%203%20%E4%B8%AA%E8%A7%84%E5%88%92%E4%B8%AD-green)
+
+> **一个面向大学生竞赛的 Agent 平台。** 目前实现了 **电赛** 分区（赛题分析 + 控制类调参），
+> 架构上预留了数学建模 / IT 类 / 创新创业等分区 —— 新增一个竞赛 = 加一份分区配置 + 一个题库目录，**不动核心代码**。
 
 ---
 
@@ -15,7 +19,8 @@
 |---|---|
 | 读赛题 → 逐条拆解要求并**量化** | 替你焊电路、写最终固件（它给骨架与参数初值） |
 | 查**官方答疑**与**历年同类题**（跨年检索） | 编造指标或器件参数（提示词里明令禁止，缺数据就标"待确认"） |
-| 出：任务拆解表 / 评分点推断 / 方案对比 / 器件清单 / 算法与 PID 初值 / 4天3夜时间线 / 风险预案 | 猜官方评分细则（官方不公开，它只做**基于历年规律的推断**，并标注"需以官方细则为准"） |
+| **调参助手**：串口/CSV 数据 → 超调量/上升时间/调节时间/稳态误差 + 曲线图 + PID 调整建议 | 替你决定最终参数（它给"改哪个、改多少、怎么验证"，实测还得你来） |
+| 出：任务拆解表 / 评分点推断 / 方案对比 / 器件清单 / 算法与 PID 初值 / 4天3夜时间线 / 风险预案 / 调参报告 | 猜官方评分细则（官方不公开，它只做**基于历年规律的推断**，并标注"需以官方细则为准"） |
 | 报告自动落盘为 Markdown **+ Word** | 联网替你去比赛（赛期禁止与队外交流，方案里也不会出现这类建议） |
 
 **实测样例**：用 2026 赛区赛 **H 题《车载平衡滚球运动控制系统》** 跑完整流程 —— 自主 8 步、24 次工具调用（其中答疑检索 20 次）、产出 18.8 KB 报告 + Word；报告里给出逐条分值（6/16/13/20/20/20/5/20）、从赛道几何**推算出整圈 6.14 m** 与所需速度、3 个方案对比（舵机直推 / 步进丝杆 / 双闭环），并抓到答疑里的硬约束（循迹**只能用红外光电模块**、摆杆 25 cm PPR 管、**球位必须用摄像头**）。
@@ -26,10 +31,11 @@
 
 ```bash
 # 0) 依赖
-pip install -r requirements.txt          # requests / PyYAML / pypdf / python-docx
+pip install -r requirements.txt          # requests / PyYAML / pypdf / python-docx / numpy / matplotlib
 
-# 1) 自检：Key 从哪来、题库有什么题、模型名对不对（不花钱）
+# 1) 自检：分区 / Key 从哪来 / 题库有什么题 / 模型名对不对（不花钱）
 python cli.py --check
+python cli.py --domains                  # 只看分区表
 
 # 2) 空跑：只打印提示词，不调用模型（0 成本，改提示词时用这个）
 python cli.py analyze H --dry-run
@@ -37,8 +43,14 @@ python cli.py analyze H --dry-run
 # 3) 真跑：分析 H 题 → out/H题-分析报告.md + .docx
 python cli.py analyze H
 
-# 4) 离线自测：19 项检查，验证工具链（不消耗额度）
+# 4) 调参（v0.2）：阶跃响应 → 指标 + 曲线图 + PID 建议 + 报告
+python scripts/make_sample_step.py                        # 先生成一份示例数据（可选）
+python cli.py tune samples/step-response-sample.csv --target 1.0            # 含模型诊断
+python cli.py tune samples/step-response-sample.csv --target 1.0 --no-llm   # 只本地算（0 成本）
+
+# 5) 测试：离线自测 27 项 + 调参算法 20 项（都不消耗额度）
 python tests/test_offline.py
+python tests/test_tuning.py
 ```
 
 `analyze` 后面可以写**题号**（`H`）或**文件名片段**（`滚球`）；跨年的同题号会自动提示年份。
@@ -67,15 +79,42 @@ python tests/test_offline.py
 核心就是 `diansai_agent/loop.py` 里那 30 行：**模型只负责"决定下一步做什么"，程序负责"真的去做"，再把结果喂回去**。
 所有 Agent（Claude Code、Codex、DSH 自己）都是这个骨架 —— 这里没有魔法，也没有框架黑盒。
 
-### 5 个工具
+### 6 个工具
 
 | 工具 | 干什么 |
 |---|---|
-| `list_shiti` | 列出题库（按年份分组，题号/标题/大小） |
+| `list_shiti` | 列出当前分区题库（按年份分组，题号/标题/大小） |
 | `read_shiti` | 读赛题正文（**已修掉 PDF"一字一行"的排版问题**） |
 | `search_qa` | 在赛区官方《问题解答（答疑）》里按关键词检索段落 —— 指标口径、器材限制都在这 |
 | `search_tiku` | **跨年份检索**整个题库（历年赛题 + 答疑 + 规律文档）："往年考过什么类似的？" |
+| `analyze_step_data` | **调参助手**（v0.2）：算超调/上升时间/调节时间/稳态误差 + 出曲线图 + 给 PID 建议；**纯本地确定性计算** |
 | `write_report` | 报告写入 `out/`，并自动转一份 Word |
+
+---
+
+## 竞赛平台：分区制（Domain）
+
+```
+diansai_agent/
+├── loop.py            ← Agent 骨架（不随竞赛变）
+├── llm.py / config.py ← 模型与配置（不随竞赛变）
+├── domains.py         ← ★ 分区配置：题库目录 / 提示词 / 模板 / 该分区启用哪些工具
+└── tools/             ← 通用工具（题库 / 报告 / 调参），跨分区复用
+data/题库/<分区>/<年份批次>/<题号>题_<题名>.md
+```
+
+| 分区 id | 名称 | 状态 | 接入还需要什么 |
+|---|---|---|---|
+| `diansai` | 全国大学生电子设计竞赛（电赛） | ✅ 已实现 | —（41 道历年真题 + 答疑 + 调参助手） |
+| `mathmodel` | 全国大学生数学建模竞赛 | 🚧 规划中 | 历年赛题（A/B/C）、优秀论文评阅要点、数据处理/优化/统计工具 |
+| `itcup` | 中国大学生计算机设计大赛 / IT 类 | 🚧 规划中 | 历年赛题与作品要求、答辩评分表、原型开发与演示工具 |
+| `startup` | “互联网+”/挑战杯等创新创业竞赛 | 🚧 规划中 | 评审规则、商业计划书结构与评分维度、财务测算与路演工具 |
+
+**新增一个竞赛分区要做的三件事**（约半天）：
+1. `data/题库/<分区>/<年份>/` 放题库（可用 `scripts/extract_shiti.py` 抽 PDF）；
+2. 加一份提示词（角色 + 铁律 + 报告模板，见 `diansai_agent/prompts/`）；
+3. 在 `domains.py` 里登记一条 `Domain`（填题库目录、提示词文件名、启用哪些工具）。
+然后 `python cli.py --domain <分区> analyze <题号>` 就能用。
 
 ---
 
@@ -83,24 +122,31 @@ python tests/test_offline.py
 
 ```
 diansai-agent/
-├── cli.py                       # 命令行入口
+├── cli.py                       # 命令行入口（analyze / tune / --check / --domains）
 ├── diansai_agent/
 │   ├── config.py                # Key/模型/题库路径（Key 来源：环境变量 → .env → DSH 凭据文件）
+│   ├── domains.py               # ★ 竞赛分区配置（平台化的核心抽象）
 │   ├── llm.py                   # 一次模型调用（requests 直连，不用 SDK）
 │   ├── loop.py                  # ★ Agent Loop（心脏）
 │   ├── prompts/
 │   │   ├── system.md            # 角色与铁律（不许编造 / 必须标经验值 / 必须查答疑与历年题）
-│   │   └── analyze.md           # 报告模板（8 个章节）
+│   │   ├── analyze.md           # 赛题分析报告模板（8 章）
+│   │   └── tune.md              # 调参报告模板（6 章）
 │   └── tools/
 │       ├── __init__.py          # 工具注册表（JSON Schema + 执行 + 错误兜底）
-│       ├── shiti.py             # 题库：列出 / 读取 / 检索答疑 / 跨年检索
+│       ├── shiti.py             # 题库：列出 / 读取 / 检索答疑 / 跨年检索（按分区找目录）
+│       ├── tuning.py            # ★ 调参引擎：解析数据 → 指标 → 规则建议 → 画图
 │       ├── report.py            # 写 md + 转 docx
 │       └── md2docx.py           # 随仓库带走的 Markdown→Word 转换器
 ├── docs/                        # 历年题名与分类、历年规律与 2027 选题预测（含 Word 版）
+├── samples/                     # 示例数据（阶跃响应，含基线/噪声/静差，便于试跑）
 ├── scripts/
 │   ├── fetch_history.py         # 重建题库：从公开仓库按年份批量拉赛题 PDF → 文本
-│   └── extract_shiti.py         # 把任意目录的赛题 PDF 批量抽成可读文本（修"一字一行"）
-├── tests/test_offline.py        # 离线自测（19 项，不含 API 调用）
+│   ├── extract_shiti.py         # 把任意目录的赛题 PDF 批量抽成可读文本（修"一字一行"）
+│   └── make_sample_step.py      # 生成示例阶跃数据
+├── tests/
+│   ├── test_offline.py          # 离线自测 27 项（工具链 + 分区，不含 API 调用）
+│   └── test_tuning.py           # 调参算法 20 项（用解析解已知的二阶系统校验！）
 ├── data/题库/                    # 本地赛题语料（★ 不进版本控制，见下）
 ├── requirements.txt
 ├── LICENSE                      # MIT（只覆盖代码）
@@ -163,9 +209,11 @@ diansai-agent/
 
 | 版本 | 内容 | 验收标准 |
 |---|---|---|
-| **v0.2** | 调参助手：串口/CSV → 曲线 + 自动算**超调/上升时间/稳态误差** + PID 调整建议 | 用真实数据跑通，指标与手算一致 |
+| ~~v0.1~~ | ~~赛题分析：读题 → 查答疑/历年题 → 出作战方案~~ | ✅ 2026-09-29 完成（H 题实测：8 步 / 24 次工具调用 / 18.8 KB 报告） |
+| **v0.2** | **调参助手**：阶跃响应 → 指标 + 曲线 + PID 建议；**竞赛分区抽象**（平台化第一步） | ✅ 2026-09-29 完成：调参算法用**解析解校验 20 项全过**（σ% 16.31 vs 解析 16.30）；噪声样本三项鲁棒性修复；分区表可切换 |
 | **v0.3** | **评测**：10 条真题任务 → 自动打分（指标覆盖/器件齐全/时间线可行/风险识别）→ 回归报告 | 能看出"改提示词前后"分数变化 |
-| v0.4 | DSH 技能薄壳（在 DeepSeek Harness 里直接调用）+ 可选 Web 界面 | 队友不装 Python 也能用 |
+| **v0.4** | 接入第 2 个竞赛分区（数学建模最省事：同样是"读题→建模→出方案"） | `--domain mathmodel analyze A` 能跑出可用方案 |
+| v0.5 | Web 界面 + DSH 技能薄壳（队友不装 Python 也能用） | 一份报告能在浏览器里看/下载 |
 
 ---
 

@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""题库工具：跨年份列出/检索赛题与历年规律。
+"""题库工具：按**竞赛分区**列出/检索赛题、答疑与历年规律。
 
-题库目录（可多个，按顺序合并）：
-  1. 仓库内置：<repo>/data/题库/            ← 随工作台走，开箱可用
-  2. 环境变量 DIANSAI_KB 指定的目录
-  3. 工作区外部真题库（本机默认路径，兼容旧用法）
+题库布局（多分区）：
+    data/题库/<分区>/<年份批次>/<题号>题_<题名>.md
+例如：data/题库/diansai/2026-省赛/H题_车载平衡滚球运动控制系统.md
+
+分区由环境变量 DIANSAI_DOMAIN 指定（CLI 的 --domain 会设置它），默认 diansai。
+另外支持环境变量 DIANSAI_KB 追加一个外部题库目录（内容按「年份目录+文件名」去重）。
 """
 from __future__ import annotations
 
@@ -12,16 +14,30 @@ import os
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-BUILTIN_DIR = REPO_ROOT / "data" / "题库"
+from ..domains import KB_ROOT, get_domain
+
+
+def current_domain_id() -> str:
+    return (os.environ.get("DIANSAI_DOMAIN") or "diansai").strip().lower()
 
 
 def kb_dirs() -> list[Path]:
-    """题库目录：内置优先；DIANSAI_KB 可追加外部题库（内容会按文件名去重）。"""
-    dirs = [BUILTIN_DIR]
+    """当前分区的题库目录（可多个，按顺序合并、按「年份目录+文件名」去重）。
+
+    顺序：① 分区目录 ② 环境变量追加的外部目录 ③ 旧的"题库根目录平铺"布局（兼容老用户）
+    """
+    dirs: list[Path] = []
+    try:
+        dirs.append(get_domain(current_domain_id()).kb_dir())
+    except KeyError:
+        dirs.append(KB_ROOT / current_domain_id())
     env = os.environ.get("DIANSAI_KB")
     if env:
         dirs.append(Path(env))
+    # 兼容：若题库根目录下直接躺着年份目录（老布局），也当一份题库
+    if KB_ROOT.exists() and any(re.fullmatch(r"\d{4}.*", p.name) for p in KB_ROOT.iterdir() if p.is_dir()):
+        dirs.append(KB_ROOT)
+
     out, seen = [], set()
     for d in dirs:
         try:

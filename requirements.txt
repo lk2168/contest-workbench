@@ -2,3 +2,8 @@ requests>=2.31
 PyYAML>=6.0
 pypdf>=5.0
 python-docx>=1.1
+numpy>=1.26
+matplotlib>=3.8
+
+# 可选：直接读串口实时数据（不装也能用文件数据）
+# pyserial>=3.5
