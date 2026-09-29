@@ -15,11 +15,15 @@
 >
 > 🎯 **目标**：做成**不懂 AI 的大学生接触的第一款开源 AI Agent 项目** —— 有网页界面、能看见 Agent 每一步在干什么、指标可验证。
 
-![网页端首屏：选择一个竞赛](docs/web-首屏.png)
+![网页端首屏](docs/web-首屏.png)
 
 进入某个竞赛后是**分区工作台**（左：题面；右：Agent 每一步的动作）：
 
 ![电赛工作台](docs/web-电赛页.png)
+
+设置收在右上角抽屉里，小白第一眼看不到参数：
+
+![设置抽屉](docs/web-设置.png)
 
 ---
 
@@ -97,14 +101,31 @@ python tests/test_web.py        # 20 项：网页接口 + 上传调参 + 路径�
 > 该能力由 `domains.py` 的 `Domain.tune_template` 推导成 `capabilities`，
 > 前端按能力决定显示哪些页签 —— 以后接数学建模时，页签会自动只剩"赛题分析"。
 
-**设计方向**（按 [frontend-design](https://github.com/Ilm-Alan/frontend-design) skill 的 Swiss 锚点实现）：
-纯白/浅灰底、**单一克莱因蓝** `#002FA7`、1px 细线代替阴影与圆角、左对齐、数字用 `tabular-nums`（步骤列号与指标表因此纵向对齐）；
-界面**不用 emoji 当图标**，文案只用真实信息。差异动作：题面与进度**双栏、一条 1px 竖线贯穿**。
+**设计方向与样式系统**（新模块请**只用这些 token**，不要在组件里写死颜色/间距/圆角）：
+
+| 组 | 值 | 说明 |
+|---|---|---|
+| 中性阶 | `--g25 … --g900`（冷灰，`#FCFCFD → #101828`） | 一根色相只变明度，结构靠它搭 |
+| 强调色 | `--b600:#2563EB`（唯一色相） | **60/30/10**：约 10% 面积用蓝色，颜色只用来**表达状态与动作** |
+| 语义色 | `--ok/--warn/--err` 各带浅底 | 只用于状态，不做装饰 |
+| 类型 | 14px 基准 × **1.25** → 11/12/14/16/18/22/28/44 | 层级 = **字号 + 字重 + 颜色** 三者一起用，不靠单堆字号 |
+| 间距 | 8px 网格 `--s1…--s10`（4→80） | 组内紧（12）、组间松（40–56），**节奏不均** |
+| 圆角 | `--r-ctl:6` / `--r-card:10` / `--r-pill:999` | 同心：外层 = 内层 + padding |
+| 深度 | `--sh-xs…--sh-lg`（层叠透明阴影，含 1px 内描边） | **用阴影代替硬边框**；输入框比周围**更深**（内嵌感） |
+| 动效 | 交互 ≤160ms、抽屉 240ms，`--ease:cubic-bezier(.23,1,.32,1)` | 只动 `transform/opacity`；`:active` 缩到 0.975；**不用 `transition:all`、不用 ease-in** |
+
+规则来源：[`frontend-design`](https://github.com/Ilm-Alan/frontend-design)（8 套设计锚点）、
+[`interface-design`](https://github.com/svssdeva/agentic-skills)（"看起来贵"的工艺清单）、
+[`open-props`](https://github.com/argyleink/open-props)（★5.5k，CSS 变量做 token 的思路）。
+**刻意不用 DaisyUI（★42k）/ shadcn（★20k）**：它们需要 Tailwind/React 构建，
+会破坏本项目"零构建、无 node_modules、离线可用"这个对小白用户最重要的优势。
 
 技术取舍（**为"给不懂 AI 的同学用"服务**）：
 - **FastAPI + 原生 HTML/JS**：仓库里**没有 node_modules、没有构建步骤**，`pip install` 完就能跑；
 - **SSE 而不是 WebSocket**：单向推流足够，实现简单、不需要额外依赖；
-- **单文件前端**（`diansai_agent/web/static/index.html`）：样式与脚本内联、Markdown 自带极简渲染器，不引任何 CDN（离线可用）。
+- **单文件前端**（`diansai_agent/web/static/index.html`）：样式与脚本内联、Markdown 自带极简渲染器，
+  图标是**内联 SVG**（1.75 描边，随文字颜色），不引任何 CDN（离线可用）；
+- **响应式**：≤920px 单列、≤760px 收顶栏、长路径强制断行（`overflow-wrap:anywhere`）。
 
 `analyze` 后面可以写**题号**（`H`）或**文件名片段**（`滚球`）；跨年的同题号会自动提示年份。
 

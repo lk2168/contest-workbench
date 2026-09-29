@@ -4,278 +4,528 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>竞赛 Agent 平台</title>
+<!--
+  样式系统（所有模块共用，勿在组件里写死颜色/间距/圆角）
+  ─ 颜色：单一蓝色相 + 冷灰中性阶，60/30/10
+  ─ 类型：14px 基准 × 1.25 → 11/12/14/16/18/22/28/44；层级靠「字号+字重+颜色」三者
+  ─ 间距：8px 网格（4/8/12/16/20/24/32/40/56/80）
+  ─ 圆角：6 控件 / 10 卡片 / 999 药丸（同心：外层 = 内层 + padding）
+  ─ 深度：层叠透明阴影代替硬边框；输入框比周围更深（内嵌感）
+  ─ 动效：≤160ms 交互、≤250ms 抽屉；只动 transform/opacity；不用 ease-in、不用 transition:all
+-->
 <style>
-  /* ── Swiss：纯白底 + 单一强调色（Yves Klein Blue）+ 1px 细线 + 左对齐 + 表格数字 ── */
-  :root{
-    --surface:#FFFFFF; --bg:#F7F7F8; --ink:#111111; --muted:#666666;
-    --rule:#E4E4E7; --rule-strong:#111111; --accent:#002FA7; --accent-soft:#EEF1FA;
-    --sans:"Helvetica Neue",Helvetica,Arial,"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6}
-  /* 所有数字用等宽数字，便于纵向对齐（Swiss 把数字当排版元素） */
-  body{font-variant-numeric:tabular-nums}
-  a{color:var(--accent);text-decoration:none}
-  a:hover{text-decoration:underline}
-  h1{font-size:26px;line-height:1.25;margin:0 0 6px;letter-spacing:-.01em}
-  h2{font-size:17px;margin:0 0 10px;letter-spacing:-.005em}
-  h3{font-size:15px;margin:18px 0 6px}
-  p{margin:0 0 10px}
-  .muted{color:var(--muted)}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+:root{
+  /* 中性阶（一根色相，只变明度） */
+  --g25:#FCFCFD; --g50:#F9FAFB; --g100:#F2F4F7; --g200:#EAECF0; --g300:#D0D5DD;
+  --g400:#98A2B3; --g500:#667085; --g600:#475467; --g700:#344054; --g800:#1D2939; --g900:#101828;
+  /* 强调色（唯一色相） */
+  --b50:#EFF6FF; --b100:#DBEAFE; --b200:#BFDBFE; --b500:#3B82F6; --b600:#2563EB; --b700:#1D4ED8;
+  /* 语义色（只用于状态） */
+  --ok-bg:#ECFDF3; --ok-fg:#067647; --warn-bg:#FFFAEB; --warn-fg:#B54708; --err-bg:#FEF3F2; --err-fg:#B42318;
 
-  /* 顶栏：细线 + 左对齐 + 右侧唯一操作 */
-  header.top{background:var(--surface);border-bottom:1px solid var(--rule-strong)}
-  header.top .wrap{display:flex;align-items:baseline;gap:14px;height:52px}
-  .brand{font-weight:700;letter-spacing:-.01em}
-  .crumb{color:var(--muted);font-size:13.5px}
-  .grow{flex:1}
-  main{padding:26px 0 60px}
+  --surface:#FFFFFF; --canvas:var(--g50); --ink:var(--g900); --ink2:var(--g600); --ink3:var(--g500);
+  --line:rgba(16,24,40,.08); --line-soft:rgba(16,24,40,.05);
 
-  /* 按钮：方角、细线、克制的强调色 */
-  button{font:inherit;cursor:pointer;border:1px solid var(--rule-strong);background:var(--surface);
-         color:var(--ink);padding:7px 14px;border-radius:0}
-  button:hover{background:var(--bg)}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  button.primary:hover{filter:brightness(1.08)}
-  button.quiet{border-color:var(--rule)}
-  button.quiet:hover{border-color:var(--rule-strong)}
-  button.link{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline}
-  button:disabled{opacity:.45;cursor:not-allowed}
-  select,input[type=number],input[type=file]{font:inherit;border:1px solid var(--rule-strong);
-         background:var(--surface);padding:6px 8px;border-radius:0;color:inherit;max-width:100%}
+  --r-ctl:6px; --r-card:10px; --r-pill:999px;
+  --sh-xs:0 0 0 1px var(--line-soft), 0 1px 2px -1px rgba(16,24,40,.06);
+  --sh-sm:0 0 0 1px var(--line-soft), 0 1px 2px rgba(16,24,40,.06), 0 2px 6px -1px rgba(16,24,40,.04);
+  --sh-md:0 0 0 1px var(--line-soft), 0 4px 8px -2px rgba(16,24,40,.06), 0 12px 24px -4px rgba(16,24,40,.06);
+  --sh-lg:0 0 0 1px var(--line-soft), 0 12px 16px -6px rgba(16,24,40,.08), 0 24px 48px -12px rgba(16,24,40,.14);
 
-  /* 分区卡片：网格线分隔（Swiss 的"可见网格"） */
-  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));gap:0;
-         border-top:1px solid var(--rule);border-left:1px solid var(--rule);margin-top:18px}
-  .card{border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);background:var(--surface);
-        padding:16px 16px 18px;text-align:left;display:block;cursor:pointer;border-radius:0}
-  .card[disabled]{cursor:not-allowed;background:var(--bg);color:var(--muted)}
-  .card:hover:not([disabled]){background:var(--accent-soft)}
-  .card .name{font-weight:700;margin-bottom:4px}
-  .card .state{font-size:12.5px;color:var(--muted)}
-  .card .note{font-size:12.5px;color:var(--muted);margin-top:8px}
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:32px; --s8:40px; --s9:56px; --s10:80px;
+  --f-sans:"Inter var","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",Roboto,Helvetica,Arial,sans-serif;
+  --f-mono:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --ease:cubic-bezier(.23,1,.32,1);
+}
+*{box-sizing:border-box}
+/* 关键：CSS 里给元素设了 display（如 .work{display:grid}）会覆盖浏览器对 hidden 属性的
+   display:none，于是 hidden 失效、两个页签面板同时露出。必须显式兜住。 */
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%;overflow-x:hidden}
+/* 右侧抽屉是 fixed + translateX(100%)，会撑开文档可滚动宽度；
+   fixed 元素只有 html 层的 overflow 才裁得住（body 层裁不住）→ 窄屏整页被切。 */
+body{margin:0;background:var(--canvas);color:var(--ink);font-family:var(--f-sans);font-size:14px;line-height:1.5;
+     -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;overflow-x:hidden}
+h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.015em;text-wrap:balance}
+h1{font-size:28px;line-height:1.2}
+h2{font-size:18px;line-height:1.3}
+h3{font-size:16px}
+h4{font-size:14px}
+p{margin:0;text-wrap:pretty}
+a{color:var(--b700);text-decoration:none;border-radius:3px}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--b600);outline-offset:2px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 var(--s6)}
+.muted{color:var(--ink3)}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3)}
+.balance{text-wrap:balance}
 
-  /* 二级页签 */
-  nav.tabs{border-bottom:1px solid var(--rule-strong);margin:18px 0 0;display:flex;gap:22px}
-  nav.tabs button{border:0;border-bottom:2px solid transparent;background:none;padding:8px 0;color:var(--muted)}
-  nav.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:700}
-  nav.tabs button:hover{background:none;color:var(--ink)}
+/* ── 顶栏：粘顶 + 毛玻璃 + 极淡分隔 ── */
+header.top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.82);
+  backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;gap:var(--s4);height:60px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:-.01em}
+.brand .mark{width:24px;height:24px;border-radius:7px;background:var(--b600);color:#fff;
+  display:grid;place-items:center;box-shadow:0 1px 2px rgba(37,99,235,.35)}
+.brand .mark svg{width:14px;height:14px}
+.crumb{color:var(--ink3);font-size:13px;padding-left:var(--s4);border-left:1px solid var(--line)}
+.grow{flex:1}
 
-  /* 双栏工作台：一条 1px 竖线贯穿（差异动作） */
-  .work{display:grid;grid-template-columns:1fr 1px 1fr;gap:0;border-bottom:1px solid var(--rule)}
-  .work>div{padding:18px 0}
-  .work .ruler{background:var(--rule)}
-  .work .left{padding-right:22px}
-  .work .right{padding-left:22px}
-  @media(max-width:880px){
-    .work{grid-template-columns:1fr}
-    .work .ruler{display:none}
-    .work .left,.work .right{padding:16px 0}
-  }
-  .field{margin-bottom:12px}
-  .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
-  .field select{width:100%}
+/* ── 按钮：默认/悬停/按下/禁用/载入 ── */
+button{font:inherit;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+  gap:7px;height:38px;padding:0 var(--s4);border-radius:var(--r-ctl);border:1px solid transparent;
+  background:var(--surface);color:var(--ink);box-shadow:var(--sh-xs);
+  transition:background-color .14s var(--ease),box-shadow .14s var(--ease),transform .1s var(--ease),border-color .14s var(--ease)}
+button svg{width:16px;height:16px;flex:none}
+button:hover{background:var(--g50)}
+button:active{transform:scale(.975)}
+button[disabled]{opacity:.5;cursor:not-allowed;box-shadow:none}
+button.primary{background:var(--b600);color:#fff;box-shadow:0 1px 2px rgba(16,24,40,.12),0 0 0 1px rgba(37,99,235,.9) inset}
+button.primary:hover{background:var(--b700)}
+button.ghost{background:transparent;box-shadow:none;border-color:var(--line);color:var(--ink2)}
+button.ghost:hover{background:var(--g50);color:var(--ink)}
+button.link{background:none;box-shadow:none;height:auto;padding:0;color:var(--b700);font-weight:500}
+button.link:hover{background:none;text-decoration:underline}
+button.icon{width:38px;padding:0;color:var(--ink2)}
+.spin{animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
-  /* 题面预览 / 控制台：均为"数据读出"块，方角细线 */
-  .readout{border:1px solid var(--rule);background:var(--surface);padding:12px;
-           max-height:220px;overflow:auto;white-space:pre-wrap;font-size:13px;line-height:1.55}
-  .readout.tall{max-height:70vh}
-  .readout .cap{color:var(--accent);font-weight:700;display:block;margin-bottom:6px}
-  .console{background:var(--ink);color:#EDEDED;padding:12px;min-height:220px;max-height:340px;
-           overflow:auto;font-size:13px;line-height:1.6}
-  .console .row{display:grid;grid-template-columns:34px 1fr;gap:10px}
-  .console .no{color:#8E8E93}
-  .console .ev-tool{color:#FFFFFF;font-weight:700}
-  .console .ev-error{color:#FF9F0A}
-  .console .ev-answer{font-weight:700}
-  .empty{color:var(--muted);font-size:13px}
+/* ── 表单：输入比周围更深（内嵌感），聚焦时描边 ── */
+select,input[type=number],input[type=text],input[type=file]{font:inherit;color:var(--ink);
+  background:var(--g100);border:1px solid transparent;border-radius:var(--r-ctl);height:38px;padding:0 var(--s3);
+  width:100%;transition:background-color .14s var(--ease),box-shadow .14s var(--ease)}
+select:hover,input:hover{background:var(--g200)}
+select:focus,input:focus{outline:none;background:var(--surface);box-shadow:0 0 0 4px var(--b100),0 0 0 1px var(--b500)}
+input[type=file]{padding:6px var(--s3);font-size:13px}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--b600);vertical-align:-3px}
+label{font-size:13px;font-weight:500;color:var(--ink2)}
+.field{margin-bottom:var(--s4)}
+.field>label{display:block;margin-bottom:6px}
 
-  /* 设置抽屉：默认隐藏，点「设置」才出现 */
-  .drawer{border:1px solid var(--rule-strong);background:var(--surface);padding:16px 18px;margin:16px 0 0}
-  .drawer .line{display:grid;grid-template-columns:190px 1fr;gap:12px;align-items:center;
-                padding:9px 0;border-bottom:1px solid var(--rule)}
-  .drawer .line:last-child{border-bottom:0}
-  .drawer .line span.hint{display:block;color:var(--muted);font-size:12.5px}
+/* ── 卡片 / 分区 / 药丸 ── */
+.card{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--sh-sm);padding:var(--s5)}
+.card.pad-lg{padding:var(--s6)}
+.pill{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:var(--r-pill);
+  font-size:11.5px;font-weight:600}
+.pill.ok{background:var(--ok-bg);color:var(--ok-fg)}
+.pill.warn{background:var(--warn-bg);color:var(--warn-fg)}
+.pill.neutral{background:var(--g100);color:var(--g600)}
+.pill.accent{background:var(--b50);color:var(--b700)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--s4)}
+.chip{font-size:11.5px;color:var(--ink2);background:var(--g100);border-radius:var(--r-pill);padding:3px 9px}
 
-  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
-  th,td{border:1px solid var(--rule);padding:6px 9px;text-align:left;vertical-align:top}
-  th{background:var(--bg);font-weight:700}
-  code{background:var(--bg);padding:1px 5px;font-size:12.5px}
-  ul.files{list-style:none;padding:0;margin:8px 0 0}
-  ul.files li{display:flex;gap:12px;align-items:baseline;justify-content:space-between;
-              border-bottom:1px solid var(--rule);padding:9px 0;font-size:13.5px}
-  ul.files li>span:first-child{display:flex;gap:10px;align-items:baseline;min-width:0}
-  .kind{color:var(--muted);flex:0 0 74px}   /* 定宽列：行内元素上 min-width 不生效，必须用 flex-basis */
-  img.chart{max-width:100%;border:1px solid var(--rule);background:#fff}
-  footer{border-top:1px solid var(--rule);color:var(--muted);font-size:12.5px;padding:16px 0 40px}
+/* ── 首页 hero：焦点明确、节奏不均 ── */
+.hero{padding:var(--s10) 0 var(--s8)}
+.hero h1{font-size:44px;line-height:1.1;letter-spacing:-.03em;max-width:16em}
+.hero .lede{margin-top:var(--s4);font-size:16px;line-height:1.55;color:var(--ink2);max-width:34em}
+.hero .cta{margin-top:var(--s6);display:flex;gap:var(--s3);flex-wrap:wrap}
+.stats{display:flex;gap:var(--s8);margin-top:var(--s8);padding-top:var(--s5);border-top:1px solid var(--line)}
+.stat .k{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)}
+.stat .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+.section{padding-top:var(--s9)}
+.section>.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s4);margin-bottom:var(--s5)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:var(--s4)}
+/* 焦点卡（当前唯一可用的分区）：通栏、横向布局、强调底色 —— 一屏只有一个焦点 */
+.dhero{background:
+    linear-gradient(120deg,rgba(239,246,255,.9),rgba(255,255,255,0) 62%),var(--surface);
+  box-shadow:var(--sh-md);border-radius:var(--r-card);padding:var(--s6);
+  display:grid;grid-template-columns:1fr auto;gap:var(--s6);align-items:center;margin-bottom:var(--s4)}
+.dhero .name{font-size:22px;font-weight:600;letter-spacing:-.02em}
+.dhero .desc{font-size:13.5px;color:var(--ink2);margin-top:6px;max-width:46em}
+.dhero .ico{width:40px;height:40px;border-radius:10px;background:var(--b600);color:#fff;display:grid;place-items:center;
+  box-shadow:0 1px 2px rgba(37,99,235,.4)}
+.dhero .ico svg{width:20px;height:20px}
+.dhero .top{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)}
+@media(max-width:760px){.dhero{grid-template-columns:1fr}}
+.dcard{text-align:left;align-items:stretch;   /* 关键：column flex 下必须 stretch，否则被基础 button 的 align-items:center 居中 */
+  background:var(--surface);border:0;box-shadow:var(--sh-sm);border-radius:var(--r-card);
+  padding:var(--s5);display:flex;flex-direction:column;gap:var(--s3);height:auto;min-height:150px;cursor:pointer;
+  transition:box-shadow .16s var(--ease),transform .16s var(--ease)}
+.dcard:hover{box-shadow:var(--sh-md);transform:translateY(-1px)}
+.dcard[disabled]{cursor:default;background:var(--g25);box-shadow:var(--sh-xs)}
+.dcard[disabled]:hover{transform:none;box-shadow:var(--sh-xs)}
+.dcard .row{display:flex;align-items:center;justify-content:space-between;gap:var(--s3)}
+.dcard .name{font-size:16px;font-weight:600;letter-spacing:-.01em;line-height:1.35}
+.dcard .desc{font-size:13px;color:var(--ink2);line-height:1.5}
+.dcard .ico{width:34px;height:34px;border-radius:9px;background:var(--b50);color:var(--b700);display:grid;place-items:center}
+.dcard[disabled] .ico{background:var(--g100);color:var(--g400)}
+.dcard .ico svg{width:17px;height:17px}
+@media(max-width:900px){.hero h1{font-size:34px}.stats{gap:var(--s6)}}
+
+/* ── 页签（分段控件：白色滑块 + 阴影）── */
+.tabs{display:inline-flex;gap:2px;padding:3px;background:var(--g100);border-radius:9px;margin:var(--s6) 0 var(--s5)}
+.tabs button{height:32px;padding:0 var(--s4);box-shadow:none;background:transparent;color:var(--ink2);font-size:13.5px;border-radius:7px}
+.tabs button:hover{background:transparent;color:var(--ink)}
+.tabs button[aria-selected=true]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:var(--sh-xs)}
+
+/* ── 工作台：左表单 + 右控制台，靠留白分组而不是靠线 ── */
+.work{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:var(--s6);align-items:start}
+/* ★ grid 项默认 min-width:auto —— 题面里的长路径/长行会把整列撑破（grid blowout），
+   必须给 minmax(0,1fr) 或 min-width:0，否则窄屏会横向溢出、正文被切掉。 */
+.work>*{min-width:0}
+.stack{min-width:0}
+@media(max-width:920px){.work{grid-template-columns:minmax(0,1fr)}}
+.row-actions{display:flex;gap:var(--s2)}
+/* 工作台里那两处按钮行也走同一套（窄屏换行） */
+.work .row-actions,.card .row-actions{display:flex;gap:var(--s2)}
+@media(max-width:920px){.work{grid-template-columns:1fr}}
+.readout{background:var(--g100);border-radius:8px;padding:var(--s3) var(--s4);max-height:250px;overflow:auto;
+  white-space:pre-wrap;overflow-wrap:anywhere;   /* 长路径要能断行，否则把卡片撑破 */
+  font-family:var(--f-mono);font-size:12.5px;line-height:1.65;color:var(--g700)}
+/* 窄屏：顶栏只留品牌（分区名在标题里已重复），避免面包屑撑破视口 → 整页横向滚动 */
+@media(max-width:760px){
+  .crumb{display:none}
+  h1{font-size:24px}
+  .hero h1{font-size:30px}
+  .hero{padding:var(--s7) 0 var(--s6)}
+  .stats{gap:var(--s5);flex-wrap:wrap}
+  .section{padding-top:var(--s8)}
+  .row-actions{flex-wrap:wrap}
+  .row-actions>button{flex:1 1 46%}
+  footer .wrap{flex-direction:column;align-items:flex-start;gap:6px}
+}
+.readout.tall{max-height:70vh}
+.readout .cap{display:block;font-family:var(--f-sans);font-weight:600;color:var(--b700);margin-bottom:6px;font-size:12.5px}
+.console{background:var(--g900);border-radius:8px;overflow:hidden}
+.console .bar{display:flex;align-items:center;gap:var(--s2);padding:9px var(--s4);border-bottom:1px solid rgba(255,255,255,.08)}
+.console .bar .t{color:#fff;font-size:12.5px;font-weight:600;letter-spacing:.01em}
+.console .bar .s{margin-left:auto;color:var(--g400);font-size:11.5px;font-variant-numeric:tabular-nums}
+.console .body{padding:var(--s3) var(--s4);min-height:236px;max-height:352px;overflow:auto;
+  font-family:var(--f-mono);font-size:12.5px;line-height:1.7;color:#D7DCE5}
+.console .body .r{display:grid;grid-template-columns:30px 1fr;gap:var(--s3)}
+.console .body .n{color:var(--g500);font-variant-numeric:tabular-nums}
+.console .body .tool{color:#fff;font-weight:600}
+.console .body .err{color:#FDA29B}
+.console .body .done{color:#75E0A7;font-weight:600}
+.console .body .hint{color:var(--g500)}
+
+/* ── 结果文章 / 表格 / 清单 ── */
+.article h1,.article h2,.article h3{letter-spacing:-.01em}
+.article h2{font-size:18px;margin:var(--s6) 0 var(--s3)}
+.article h3{font-size:15px;margin:var(--s5) 0 var(--s2)}
+.article p{margin:var(--s2) 0;color:var(--g700)}
+.article ul{margin:var(--s2) 0;padding-left:var(--s5);color:var(--g700)}
+.article li{margin:3px 0}
+table{border-collapse:separate;border-spacing:0;width:100%;margin:var(--s3) 0;font-size:13px;
+  background:var(--surface);border-radius:8px;overflow:hidden;box-shadow:var(--sh-xs)}
+th,td{padding:9px var(--s3);text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{background:var(--g50);font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink3)}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--g25)}
+code{font-family:var(--f-mono);font-size:12.5px;background:var(--g100);padding:2px 5px;border-radius:4px}
+pre{background:var(--g900);color:#D7DCE5;padding:var(--s4);border-radius:8px;overflow:auto;font-size:12.5px}
+img.chart{width:100%;border-radius:8px;box-shadow:var(--sh-xs);background:#fff}
+ul.files{list-style:none;padding:0;margin:0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--sh-sm);overflow:hidden}
+ul.files li{display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border-bottom:1px solid var(--line)}
+ul.files li:last-child{border-bottom:0}
+ul.files li:hover{background:var(--g25)}
+ul.files .fi{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;flex:none;
+  background:var(--g100);color:var(--ink2)}
+ul.files .fi svg{width:16px;height:16px}
+ul.files .nm{font-weight:500}
+ul.files .meta{margin-left:auto;display:flex;align-items:center;gap:var(--s4);color:var(--ink3);font-size:12.5px;
+  font-variant-numeric:tabular-nums}
+
+/* ── 设置抽屉（右侧滑入）── */
+.scrim{position:fixed;inset:0;background:rgba(16,24,40,.4);opacity:0;pointer-events:none;
+  transition:opacity .2s var(--ease);z-index:40}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;height:100%;width:min(420px,92vw);background:var(--surface);z-index:41;
+  box-shadow:var(--sh-lg);transform:translateX(100%);transition:transform .24s var(--ease);
+  display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.drawer .dh{display:flex;align-items:center;justify-content:space-between;padding:var(--s5) var(--s6);
+  border-bottom:1px solid var(--line)}
+.drawer .db{padding:var(--s5) var(--s6);overflow:auto}
+.drawer .line{padding:var(--s4) 0;border-bottom:1px solid var(--line)}
+.drawer .line>label{display:block;margin-bottom:6px}
+.drawer .line:last-child{border-bottom:0}
+.drawer .line .hint{display:block;color:var(--ink3);font-size:12.5px;margin-top:5px}
+
+/* ── 空状态 / 载入 / 提示条 ── */
+.empty{padding:var(--s8) var(--s5);text-align:center;color:var(--ink3)}
+.empty svg{width:22px;height:22px;margin-bottom:var(--s2);color:var(--g400)}
+.stack{display:flex;flex-direction:column;gap:var(--s4)}
+.note{display:flex;gap:var(--s3);padding:var(--s3) var(--s4);border-radius:8px;font-size:13px}
+.note.warn{background:var(--warn-bg);color:var(--warn-fg)}
+.note.err{background:var(--err-bg);color:var(--err-fg)}
+.note svg{width:16px;height:16px;flex:none;margin-top:1px}
+footer{border-top:1px solid var(--line);margin-top:var(--s10);padding:var(--s6) 0 var(--s8);color:var(--ink3);font-size:12.5px}
+footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
 </style>
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <span class="brand">竞赛 Agent 平台</span>
+    <span class="brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg></span>
+      竞赛 Agent 平台
+    </span>
     <span class="crumb" id="crumb">选择竞赛</span>
     <span class="grow"></span>
-    <button class="quiet" id="btnSettings" aria-expanded="false" aria-controls="settingsDrawer">设置</button>
+    <button class="ghost" id="btnSettings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+      设置
+    </button>
   </div>
 </header>
 
-<main class="wrap">
-  <!-- 设置：默认隐藏，小白第一眼看不到「最多步数」这类参数 -->
-  <section class="drawer" id="settingsDrawer" hidden>
-    <h2>设置</h2>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="settingsDrawer" aria-hidden="true">
+  <div class="dh">
+    <h3>设置</h3>
+    <button class="icon ghost" id="btnCloseSettings" aria-label="关闭设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="db">
     <div class="line">
       <label for="steps">最多步数</label>
-      <div>
-        <input type="number" id="steps" min="2" max="30" value="12" style="width:88px" />
-        <span class="hint">允许 Agent 最多思考几步。越大越可能想周全，也越慢、越费额度；默认 12 够用。</span>
-      </div>
+      <input type="number" id="steps" min="2" max="30" value="12" style="width:96px" />
+      <span class="hint">允许 Agent 最多思考几步。越大越可能想周全，也越慢、越费额度；默认 12 够用。</span>
     </div>
     <div class="line">
-      <label for="modelName">模型</label>
-      <div><span id="modelName" class="muted">读取中</span>
-        <span class="hint">在 <code>.env</code> 里改 <code>DEEPSEEK_MODEL</code>，或启动时加 <code>--model</code>。</span></div>
+      <label>模型</label>
+      <div id="modelName" class="muted">读取中</div>
+      <span class="hint">在 <code>.env</code> 里改 <code>DEEPSEEK_MODEL</code>，或启动时加 <code>--model</code>。</span>
     </div>
     <div class="line">
-      <label for="demoMode">只看提示词（不调用模型）</label>
-      <div><input type="checkbox" id="demoMode" />
-        <span class="hint">勾选后只展示将发给模型的内容，不消耗额度，用于检查提示词。</span></div>
+      <label for="demoMode"><input type="checkbox" id="demoMode" /> 只看提示词（不调用模型）</label>
+      <span class="hint">勾选后只展示将发给模型的内容，不消耗额度，适合检查提示词。</span>
     </div>
     <div class="line">
       <label>API Key 来源</label>
-      <div><span id="keySource" class="muted">读取中</span>
-        <span class="hint">Key 只在本地读取，不打印、不进版本库。</span></div>
+      <div id="keySource" class="muted">读取中</div>
+      <span class="hint">只在本地读取，不打印、不进版本库。</span>
+    </div>
+  </div>
+</aside>
+
+<main>
+  <!-- 视图一：首页（焦点＝电赛卡片） -->
+  <section id="viewHome" class="wrap">
+    <div class="hero">
+      <div class="eyebrow">开源 · 本地运行 · 数据不上传</div>
+      <h1 style="margin-top:10px">把竞赛赛题，变成能照着干的方案</h1>
+      <p class="lede">选一个竞赛、挑一道真题。Agent 会读题、查官方答疑、翻历年同类题，
+        然后写出任务拆解、方案对比、器件清单与赛期时间线；控制类还可以上传实测数据算指标、给调参建议。</p>
+      <div class="cta">
+        <button class="primary" id="goDiansai">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 9-14 9V3z"/></svg>
+          进入电赛
+        </button>
+        <button class="ghost" id="goAbout">它是怎么工作的</button>
+      </div>
+      <div class="stats" id="stats"></div>
+    </div>
+
+    <div class="section">
+      <div class="head">
+        <h2>竞赛分区</h2>
+        <span class="muted" style="font-size:12.5px">每个分区有自己的题库、评分口径与工具</span>
+      </div>
+      <div id="featuredCard"></div>
+      <div class="cards" id="domainCards"></div>
+    </div>
+
+    <div class="section" id="howBox">
+      <div class="head"><h2>它是怎么工作的</h2></div>
+      <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+        <div class="card">
+          <div class="eyebrow">第一步</div>
+          <h3 style="margin-top:6px">选分区、选真题</h3>
+          <p class="muted" style="margin-top:6px;font-size:13px">题库按年份/批次整理，题面可预览，不会选错年份。</p>
+        </div>
+        <div class="card">
+          <div class="eyebrow">第二步</div>
+          <h3 style="margin-top:6px">Agent 自己找依据</h3>
+          <p class="muted" style="margin-top:6px;font-size:13px">它会调用工具读题、检索赛区官方答疑、跨年份找同类题；每一步都在界面上显示。</p>
+        </div>
+        <div class="card">
+          <div class="eyebrow">第三步</div>
+          <h3 style="margin-top:6px">拿到可执行的产物</h3>
+          <p class="muted" style="margin-top:6px;font-size:13px">方案报告与调参报告落盘为 Markdown + Word，指标由本地算法计算、可复核。</p>
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- 视图一：选择竞赛（首屏只有这个，没有任何参数） -->
-  <section id="viewHome">
-    <h1>选择一个竞赛</h1>
-    <p class="muted">平台把赛题变成可执行的方案。每个竞赛有各自的题库、评分口径与工具。</p>
-    <div class="cards" id="domainCards"></div>
-  </section>
-
-  <!-- 视图二：某竞赛的工作台（二级页面） -->
-  <section id="viewDomain" hidden>
-    <button class="link" id="backHome">← 全部竞赛</button>
-    <h1 id="domainTitle" style="margin-top:10px"></h1>
-    <p class="muted" id="domainNote"></p>
+  <!-- 视图二：分区工作台 -->
+  <section id="viewDomain" class="wrap" hidden>
+    <div style="padding-top:var(--s6)">
+      <button class="link" id="backHome">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        全部竞赛
+      </button>
+    </div>
+    <div style="margin-top:var(--s4)">
+      <h1 id="domainTitle"></h1>
+      <p class="muted" id="domainNote" style="margin-top:6px"></p>
+    </div>
     <nav class="tabs" id="tabs" role="tablist"></nav>
 
-    <!-- 页签一：赛题分析 -->
     <div id="panelAnalyze" class="work" role="tabpanel">
-      <div class="left">
-        <div class="field">
-          <label for="year">年份 / 批次</label>
-          <select id="year"></select>
+      <div class="stack">
+        <div class="card">
+          <div class="field">
+            <label for="year">年份 / 批次</label>
+            <select id="year"></select>
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label for="shitiSel">题目</label>
+            <select id="shitiSel"></select>
+          </div>
+          <div style="margin-top:var(--s4)" class="row-actions">
+            <button class="primary" id="goAnalyze" style="flex:1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 9-14 9V3z"/></svg>
+              开始分析
+            </button>
+            <button class="ghost" id="goFull">展开题面全文</button>
+          </div>
         </div>
-        <div class="field">
-          <label for="shitiSel">题目</label>
-          <select id="shitiSel"></select>
-        </div>
-        <button class="quiet" id="goFull">展开题面全文</button>
-        <div class="readout" id="preview" style="margin-top:12px">选好题目后这里显示题面。</div>
-        <div style="margin-top:12px">
-          <button class="primary" id="goAnalyze">开始分析</button>
-          <span class="muted" id="analyzeStatus" style="margin-left:10px"></span>
+        <div class="card">
+          <div class="head" style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:var(--s3)">
+            <h3>题面</h3>
+            <span class="muted" style="font-size:12px" id="previewMeta"></span>
+          </div>
+          <div class="readout" id="preview">选好题目后这里显示题面。</div>
         </div>
       </div>
-      <div class="ruler"></div>
-      <div class="right">
-        <h2>分析进度</h2>
-        <div class="console" id="log"><div class="row"><span class="no">—</span><span class="empty">点「开始分析」后，这里按步显示 Agent 的动作。</span></div></div>
+
+      <div class="stack">
+        <div class="console">
+          <div class="bar">
+            <span class="t">分析进度</span>
+            <span class="s" id="analyzeStatus">待开始</span>
+          </div>
+          <div class="body" id="log"><div class="r"><span class="n">—</span><span class="hint">点「开始分析」后，这里按步骤显示 Agent 的动作：调用了哪个工具、返回多少字。</span></div></div>
+        </div>
         <div id="analyzeOut"></div>
       </div>
     </div>
 
-    <!-- 页签二：调参助手（只在该分区具备该能力时出现，目前仅电赛） -->
-    <div id="panelTune" hidden role="tabpanel">
-      <div class="work">
-        <div class="left">
-          <h2>数据</h2>
+    <div id="panelTune" class="work" hidden role="tabpanel">
+      <div class="stack">
+        <div class="card">
+          <h3 style="margin-bottom:var(--s2)">上传实测数据</h3>
           <p class="muted" style="font-size:13px">阶跃响应数据，两列：时间, 幅值。CSV / TXT / 串口日志都可以。</p>
-          <div class="field"><input type="file" id="file" accept=".csv,.txt,.log,.dat" /></div>
+          <div class="field" style="margin-top:var(--s4)"><input type="file" id="file" accept=".csv,.txt,.log,.dat" /></div>
           <div class="field">
             <label for="target">目标值（可留空）</label>
             <input type="number" step="any" id="target" placeholder="例如 1.0" />
           </div>
-          <div style="margin-bottom:12px">
-            <input type="checkbox" id="useLLM" />
-            <label for="useLLM" style="display:inline">再让模型写一份诊断报告</label>
+          <label for="useLLM" style="display:block;margin-bottom:var(--s4)">
+            <input type="checkbox" id="useLLM" /> 再让模型写一份诊断报告
+          </label>
+          <div style="display:flex;gap:var(--s2)">
+            <button class="primary" id="goTune" style="flex:1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3"/></svg>
+              分析数据
+            </button>
+            <button class="ghost" id="goSample">用示例数据</button>
           </div>
-          <button class="primary" id="goTune">分析数据</button>
-          <button class="quiet" id="goSample">用示例数据</button>
-          <div class="muted" id="tuneStatus" style="margin-top:10px"></div>
+          <p class="muted" id="tuneStatus" style="margin-top:var(--s3);font-size:12.5px"></p>
         </div>
-        <div class="ruler"></div>
-        <div class="right">
-          <h2>指标与曲线</h2>
-          <div id="tuneOut" class="empty">指标由本地算法计算（不消耗额度），可再让模型写诊断。</div>
+      </div>
+      <div class="stack">
+        <div class="card pad-lg">
+          <h3 style="margin-bottom:var(--s3)">指标与曲线</h3>
+          <div id="tuneOut" class="empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3"/></svg>
+            <div>指标由本地算法计算（不消耗额度），可再让模型写诊断。</div>
+          </div>
         </div>
       </div>
     </div>
 
-    <section style="margin-top:24px">
-      <h2>成果库</h2>
-      <p class="muted" style="font-size:13px">报告与图片保存在本机 <code>out/</code>：Markdown 可在线预览，Word 适合交作业与给队友。</p>
-      <button class="quiet" id="refresh">刷新</button>
-      <span class="muted" id="filesStatus" style="margin-left:10px"></span>
+    <div class="section">
+      <div class="head">
+        <h2>成果库</h2>
+        <div style="display:flex;align-items:center;gap:var(--s3)">
+          <span class="muted" id="filesStatus" style="font-size:12.5px"></span>
+          <button class="ghost icon" id="refresh" aria-label="刷新列表">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+          </button>
+        </div>
+      </div>
       <ul class="files" id="files"></ul>
-    </section>
+    </div>
   </section>
 </main>
 
-<footer class="wrap">
-  本地运行，数据与报告只保存在这台电脑上。赛题版权归全国大学生电子设计竞赛组委会及各赛区组委会。
-  <a href="https://github.com/lk2168/diansai-agent" target="_blank" rel="noopener">源码仓库</a>
+<footer>
+  <div class="wrap">
+    <span>本地运行，数据与报告只保存在这台电脑上。</span>
+    <span>赛题版权归全国大学生电子设计竞赛组委会及各赛区组委会。</span>
+    <span class="grow"></span>
+    <a href="https://github.com/lk2168/diansai-agent" target="_blank" rel="noopener">源码仓库</a>
+  </div>
 </footer>
 
 <script>
+/* ── 图标（内联 SVG，1.75 描边，随文字颜色）── */
+const P={
+  book:'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
+  file:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8',
+  chart:'M3 3v18h18M18 17V9M13 17V5M8 17v-3',
+  img:'M3 3h18v18H3zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM21 15l-5-5L5 21',
+  doc:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6',
+  cube:'M12 2l9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 22V12',
+  robot:'M12 2v3M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM9 13h.01M15 13h.01',
+  chart2:'M4 20h16M7 16V9M12 16V4M17 16v-6',
+  eye:'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  dl:'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+  alert:'M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+  box:'M3 7l9-5 9 5v10l-9 5-9-5zM3 7l9 5 9-5'
+};
+const ic=(n,s=16)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:${s}px;height:${s}px"><path d="${P[n]||P.file}"/></svg>`;
+
 const $=id=>document.getElementById(id);
-const state={domains:[],items:[],cur:null,domain:null,tab:"analyze",
-             steps:+(localStorage.getItem("steps")||12),
-             demo:localStorage.getItem("demo")==="1"};
+const state={domains:[],items:[],cur:null,domain:null,
+  steps:+(localStorage.getItem("steps")||12), demo:localStorage.getItem("demo")==="1"};
 $("steps").value=state.steps; $("demoMode").checked=state.demo;
 $("steps").addEventListener("change",()=>{state.steps=+$("steps").value||12;localStorage.setItem("steps",state.steps)});
 $("demoMode").addEventListener("change",()=>{state.demo=$("demoMode").checked;localStorage.setItem("demo",state.demo?"1":"0")});
-$("btnSettings").addEventListener("click",()=>{
-  const d=$("settingsDrawer"); d.hidden=!d.hidden;
-  $("btnSettings").setAttribute("aria-expanded",String(!d.hidden));
-});
+const openSettings=v=>{$("settingsDrawer").classList.toggle("on",v);$("scrim").classList.toggle("on",v);
+  $("settingsDrawer").setAttribute("aria-hidden",String(!v))};
+$("btnSettings").addEventListener("click",()=>openSettings(true));
+$("btnCloseSettings").addEventListener("click",()=>openSettings(false));
+$("scrim").addEventListener("click",()=>openSettings(false));
+document.addEventListener("keydown",e=>{if(e.key==="Escape")openSettings(false)});
+// 深链：?settings=1 直接打开设置面板（便于分享/截图）
+if(new URLSearchParams(location.search).get("settings")==="1") openSettings(true);
 
-// ── 极简 Markdown 渲染（表格/标题/列表/引用/代码）──
-const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const inline=s=>esc(s).replace(/`([^`]+)`/g,"<code>$1</code>")
+/* ── Markdown 渲染（表格/标题/列表/引用/代码）── */
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const inl=s=>esc(s).replace(/`([^`]+)`/g,"<code>$1</code>")
   .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
   .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
-function md(md){
-  const L=md.replace(/\r/g,"").split("\n"); let o=[],i=0,inT=false,inL=false,inC=false,buf=[];
+function md(src){
+  const L=String(src).replace(/\r/g,"").split("\n");let o=[],i=0,inT=false,inL=false,inC=false,buf=[];
   const close=()=>{if(inT){o.push("</table>");inT=false}if(inL){o.push("</ul>");inL=false}};
   while(i<L.length){
     let ln=L[i];
-    if(ln.trim().startsWith("```")){ if(!inC){inC=true;buf=[]} else {inC=false;o.push("<pre>"+esc(buf.join("\n"))+"</pre>")} i++;continue }
+    if(ln.trim().startsWith("```")){if(!inC){inC=true;buf=[]}else{inC=false;o.push("<pre>"+esc(buf.join("\n"))+"</pre>")}i++;continue}
     if(inC){buf.push(ln);i++;continue}
     if(/^\s*\|/.test(ln)&&i+1<L.length&&/^\s*\|[\s:|-]+\|\s*$/.test(L[i+1])){
-      close();o.push("<table>");
-      const cells=r=>r.trim().replace(/^\||\|$/g,"").split("|").map(c=>c.trim());
-      o.push("<tr>"+cells(ln).map(c=>"<th>"+inline(c)+"</th>").join("")+"</tr>"); i+=2;
-      while(i<L.length&&/^\s*\|/.test(L[i])){o.push("<tr>"+cells(L[i]).map(c=>"<td>"+inline(c)+"</td>").join("")+"</tr>");i++}
+      close();o.push("<table>");const c=r=>r.trim().replace(/^\||\|$/g,"").split("|").map(x=>x.trim());
+      o.push("<tr>"+c(ln).map(x=>"<th>"+inl(x)+"</th>").join("")+"</tr>");i+=2;
+      while(i<L.length&&/^\s*\|/.test(L[i])){o.push("<tr>"+c(L[i]).map(x=>"<td>"+inl(x)+"</td>").join("")+"</tr>");i++}
       o.push("</table>");continue;
     }
     const h=ln.match(/^(#{1,4})\s+(.*)$/);
-    if(h){close();o.push(`<h${h[1].length+1}>`+inline(h[2])+`</h${h[1].length+1}>`);i++;continue}
-    if(/^\s*[-*]\s+/.test(ln)){if(!inL){o.push("<ul>");inL=true}o.push("<li>"+inline(ln.replace(/^\s*[-*]\s+/,""))+"</li>");i++;continue}
+    if(h){close();o.push(`<h${h[1].length+1}>`+inl(h[2])+`</h${h[1].length+1}>`);i++;continue}
+    if(/^\s*[-*]\s+/.test(ln)){if(!inL){o.push("<ul>");inL=true}o.push("<li>"+inl(ln.replace(/^\s*[-*]\s+/,""))+"</li>");i++;continue}
     if(inL&&!/^\s*[-*]\s+/.test(ln)){o.push("</ul>");inL=false}
-    if(/^\s*>\s?/.test(ln)){o.push("<p class='muted'>"+inline(ln.replace(/^\s*>\s?/,""))+"</p>");i++;continue}
+    if(/^\s*>\s?/.test(ln)){o.push("<p class='muted'>"+inl(ln.replace(/^\s*>\s?/,""))+"</p>");i++;continue}
     if(ln.trim()===""){i++;continue}
-    o.push("<p>"+inline(ln)+"</p>");i++;
+    o.push("<p>"+inl(ln)+"</p>");i++;
   }
   close();return o.join("\n");
 }
 const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok)throw new Error((await r.text()).slice(0,180));return r};
 
-// ── 首屏：竞赛分区卡片 ──
+/* ── 首屏：数据来自真实接口（统计数字不是编的）── */
 (async function init(){
   try{
     const h=await(await api("/api/health")).json();
@@ -283,50 +533,75 @@ const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok)throw new Error((await 
     $("keySource").textContent=h.key_source+(h.has_key?"":"（未配置）");
     const d=await(await api("/api/domains")).json();
     state.domains=d.domains;
-    $("domainCards").innerHTML=d.domains.map(x=>`
-      <button class="card" data-id="${x.id}" ${x.implemented?"":"disabled"}>
+    const avail=d.domains.filter(x=>x.implemented), soon=d.domains.filter(x=>!x.implemented);
+    // 焦点卡：当前唯一可用分区（通栏 hero）
+    $("featuredCard").innerHTML=avail.map(x=>{
+      const cap=(x.capabilities||["analyze"]).map(c=>`<span class="chip">${c==="tune"?"调参助手":"赛题分析"}</span>`).join("");
+      return `<div class="dhero">
+        <div>
+          <div class="top">
+            <span class="ico">${ic("chart2",20)}</span>
+            <span class="pill ok">现在可用</span>
+          </div>
+          <div class="name">${esc(x.name)}</div>
+          <div class="desc">${esc(x.note||"")}</div>
+          <div class="chips">${cap}</div>
+        </div>
+        <button class="primary" data-id="${x.id}" style="height:42px;padding:0 var(--s5)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M5 3l14 9-14 9V3z"/></svg>
+          进入分析
+        </button>
+      </div>`}).join("");
+    // 规划中分区：压低对比（灰底、无强调色），不与焦点争
+    $("domainCards").innerHTML=soon.map(x=>`
+      <div class="dcard" disabled>
+        <div class="row"><span class="ico">${ic("box",17)}</span><span class="pill neutral">规划中</span></div>
         <div class="name">${esc(x.name)}</div>
-        <div class="state">${x.implemented?"可用":"规划中"}</div>
-        ${x.note?`<div class="note">${esc(x.note)}</div>`:""}
-      </button>`).join("");
-    $("domainCards").addEventListener("click",e=>{
-      const b=e.target.closest(".card"); if(!b||b.disabled) return; openDomain(b.dataset.id);
-    });
-  }catch(e){ $("domainCards").innerHTML="<p class='muted'>加载失败："+esc(e.message)+"</p>"; }
+        <div class="desc">${esc(x.note||"")}</div>
+      </div>`).join("");
+    const enter=e=>{const b=e.target.closest("[data-id]"); if(b) openDomain(b.dataset.id)};
+    $("featuredCard").addEventListener("click",enter);
+    $("domainCards").addEventListener("click",enter);
+    const sl=await(await api("/api/shiti-list")).json();
+    const usable=d.domains.filter(x=>x.implemented).length;
+    $("stats").innerHTML=[
+      ["题库真题",sl.count+" 道"],["年份批次",(sl.years||[]).length+" 批"],
+      ["可用工具",h.tools.length+" 个"],["竞赛分区",usable+" / "+d.domains.length+" 可用"]
+    ].map(([k,v])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  }catch(e){ $("domainCards").innerHTML=`<div class="note err">${ic("alert")}加载失败：${esc(e.message)}</div>`; }
 })();
+$("goDiansai").addEventListener("click",()=>openDomain("diansai"));
+$("goAbout").addEventListener("click",()=>$("howBox").scrollIntoView({behavior:"smooth",block:"start"}));
 
-function show(view){ $("viewHome").hidden=view!=="home"; $("viewDomain").hidden=view!=="domain"; }
-$("backHome").addEventListener("click",()=>{show("home");$("crumb").textContent="选择竞赛";history.replaceState(null,"","#")});
+const show=v=>{$("viewHome").hidden=v!=="home";$("viewDomain").hidden=v!=="domain"};
+$("backHome").addEventListener("click",()=>{show("home");$("crumb").textContent="选择竞赛";
+  history.replaceState(null,"","#");window.scrollTo({top:0})});
 
-// ── 二级页面：某竞赛的工作台 ──
+/* ── 二级页面 ── */
 async function openDomain(id){
   const dom=state.domains.find(x=>x.id===id); if(!dom) return;
-  state.domain=dom; state.tab="analyze";
+  state.domain=dom;
   $("domainTitle").textContent=dom.name;
   $("domainNote").textContent=dom.note||"";
   $("crumb").textContent=dom.name;
   history.replaceState(null,"","#"+id);
-  show("domain");
-  // 页签：调参只在分区具备该能力时出现（目前仅电赛）
+  show("domain"); window.scrollTo({top:0});
   const caps=dom.capabilities||["analyze"];
   const tabs=[["analyze","赛题分析"]];
   if(caps.includes("tune")) tabs.push(["tune","调参助手"]);
-  $("tabs").innerHTML=tabs.map(([k,label])=>
-    `<button role="tab" data-tab="${k}" aria-selected="${k===state.tab}">${label}</button>`).join("");
+  $("tabs").innerHTML=tabs.map(([k,t])=>`<button role="tab" data-tab="${k}" aria-selected="${k==="analyze"}">${t}</button>`).join("");
   $("tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(b)switchTab(b.dataset.tab)});
   $("panelTune").hidden=!caps.includes("tune");
   switchTab("analyze");
-  await loadShitiList();
-  loadFiles();
+  await loadShitiList(); loadFiles();
 }
 function switchTab(k){
-  state.tab=k;
   [...$("tabs").querySelectorAll("button")].forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tab===k)));
   $("panelAnalyze").hidden=k!=="analyze";
-  $("panelTune").hidden=k!=="tune"||!($("tabs").querySelector('button[data-tab="tune"]'));
+  $("panelTune").hidden=k!=="tune"||!$("tabs").querySelector('button[data-tab="tune"]');
 }
 
-// ── 题目：年份/批次 → 题目（两级），并预览题面 ──
+/* ── 题目两级选择 + 题面预览 ── */
 async function loadShitiList(){
   $("preview").textContent="正在读取题库…";
   const d=await(await api("/api/shiti-list?domain="+encodeURIComponent(state.domain.id))).json();
@@ -335,39 +610,36 @@ async function loadShitiList(){
   fillShitiSelect();
 }
 function fillShitiSelect(){
-  const y=$("year").value;
-  const list=state.items.filter(x=>!y||x.year===y);
+  const y=$("year").value, list=state.items.filter(x=>!y||x.year===y);
   $("shitiSel").innerHTML=list.map(x=>`<option value="${esc(x.file)}">${esc(x.code)} 题 · ${esc(x.title)}</option>`).join("")
     ||'<option value="">（该批次没有题目）</option>';
   loadPreview(false);
 }
 async function loadPreview(expand){
-  const file=$("shitiSel").value;
-  state.cur=state.items.find(x=>x.file===file)||null;
-  if(!state.cur){$("preview").textContent="（没有可预览的题目）";return}
-  $("preview").innerHTML='<span class="cap">'+esc(state.cur.label)+'</span>正在读取…';
+  const f=$("shitiSel").value;
+  state.cur=state.items.find(x=>x.file===f)||null;
+  if(!state.cur){$("preview").textContent="（没有可预览的题目）";$("previewMeta").textContent="";return}
+  $("preview").innerHTML=`<span class="cap">${esc(state.cur.label)}</span>正在读取…`;
   try{
-    const d=await(await api(`/api/shiti-detail?file=${encodeURIComponent(file)}&max_chars=${expand?200000:1600}`)).json();
-    $("preview").innerHTML='<span class="cap">'+esc(state.cur.label)+'</span>'
-      +esc(d.text)+'\n\n'+ (expand?"（已展开全文）":"（预览前 1600 字）");
+    const d=await(await api(`/api/shiti-detail?file=${encodeURIComponent(f)}&max_chars=${expand?200000:1600}`)).json();
+    $("preview").innerHTML=`<span class="cap">${esc(state.cur.label)}</span>`+esc(d.text);
+    $("previewMeta").textContent=`共 ${state.cur.chars} 字符 ${expand?"（已展开全文）":"（预览前 1600 字）"}`;
   }catch(e){$("preview").textContent="题面读取失败："+e.message}
 }
 $("year").addEventListener("change",fillShitiSelect);
 $("shitiSel").addEventListener("change",()=>loadPreview(false));
 $("goFull").addEventListener("click",()=>loadPreview(true));
 
-// ── 分析：按步显示（01 / 02 / 03 列号做排版）──
+/* ── 分析 ── */
 function step(no,text,cls){
-  const row=document.createElement("div"); row.className="row";
-  row.innerHTML=`<span class="no">${no}</span><span class="${cls||""}">${esc(text)}</span>`;
-  $("log").appendChild(row); $("log").scrollTop=$("log").scrollHeight;
+  const r=document.createElement("div"); r.className="r";
+  r.innerHTML=`<span class="n">${no}</span><span class="${cls||""}">${esc(text)}</span>`;
+  $("log").appendChild(r); $("log").scrollTop=$("log").scrollHeight;
 }
 $("goAnalyze").addEventListener("click",async()=>{
   if(!state.cur){$("analyzeStatus").textContent="请先选择题目";return}
-  const btn=$("goAnalyze"); btn.disabled=true;
-  $("log").innerHTML=""; $("analyzeOut").innerHTML="";
-  $("analyzeStatus").textContent="运行中";
-  let stepNo=0;
+  const b=$("goAnalyze"); b.disabled=true;
+  $("log").innerHTML=""; $("analyzeOut").innerHTML=""; $("analyzeStatus").textContent="运行中";
   try{
     const resp=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({domain:state.domain.id,file:state.cur.file,label:state.cur.label,
@@ -375,32 +647,32 @@ $("goAnalyze").addEventListener("click",async()=>{
     if(!resp.ok) throw new Error((await resp.text()).slice(0,200));
     const rd=resp.body.getReader(),dec=new TextDecoder();let buf="";
     while(true){
-      const {value,done}=await rd.read(); if(done)break;
+      const {value,done}=await rd.read(); if(done) break;
       buf+=dec.decode(value,{stream:true});
       const parts=buf.split("\n\n"); buf=parts.pop();
-      for(const part of parts){
-        if(!part.startsWith("data: "))continue;
-        const ev=JSON.parse(part.slice(6));
-        if(ev.kind==="step"){ stepNo=ev.n; step(String(ev.n).padStart(2,"0"),"开始第 "+ev.n+" 步："+ (ev.n===1?"读题与检索":"继续推理")); }
-        else if(ev.kind==="tool") step("·","调用工具 "+ev.name+"（"+JSON.stringify(ev.args).slice(0,110)+"）","ev-tool");
+      for(const p of parts){
+        if(!p.startsWith("data: ")) continue;
+        const ev=JSON.parse(p.slice(6));
+        if(ev.kind==="step") step(String(ev.n).padStart(2,"0"),ev.n===1?"读题并检索题库与答疑":"继续推理");
+        else if(ev.kind==="tool") step("·","调用工具 "+ev.name+"（"+JSON.stringify(ev.args).slice(0,110)+"）","tool");
         else if(ev.kind==="tool_result") step("·","返回 "+ev.chars+" 字符");
         else if(ev.kind==="log") step("·",ev.text);
-        else if(ev.kind==="error") step("!","出错："+ev.text,"ev-error");
+        else if(ev.kind==="error") step("!","出错："+ev.text,"err");
         else if(ev.kind==="usage") $("analyzeStatus").textContent="用量 "+ev.total_tokens+" tokens";
         else if(ev.kind==="prompt") $("analyzeOut").innerHTML=
-          "<h3>将发给模型的内容</h3><div class='readout tall'>"+esc("【System】\n"+ev.system+"\n\n【Task】\n"+ev.task)+"</div>";
+          `<div class="card pad-lg article"><h3>将发给模型的内容</h3><div class="readout tall">${esc("【System】\n"+ev.system+"\n\n【Task】\n"+ev.task)}</div></div>`;
         else if(ev.kind==="answer"&&ev.answer){
-          step("✓","完成","ev-answer");
-          $("analyzeOut").innerHTML="<h3>分析结果</h3>"+md(ev.answer);
+          step("✓","完成","done");
+          $("analyzeOut").innerHTML=`<div class="card pad-lg article">${md(ev.answer)}</div>`;
         }
         else if(ev.kind==="done"){ $("analyzeStatus").textContent+=" · 完成"; loadFiles(); }
       }
     }
-  }catch(e){ step("!","请求失败："+e.message,"ev-error") }
-  finally{ btn.disabled=false }
+  }catch(e){ step("!","请求失败："+e.message,"err") }
+  finally{ b.disabled=false }
 });
 
-// ── 调参助手（仅电赛）──
+/* ── 调参 ── */
 $("goSample").addEventListener("click",async()=>{
   $("tuneStatus").textContent="正在取示例数据…";
   const r=await api("/api/file/step-response-sample.csv"); const blob=await r.blob();
@@ -410,54 +682,61 @@ $("goSample").addEventListener("click",async()=>{
 $("goTune").addEventListener("click",async()=>{
   const f=$("file").files[0];
   if(!f){$("tuneStatus").textContent="请先选择文件";return}
-  const b=$("goTune"); b.disabled=true; $("tuneStatus").textContent="计算中…"; $("tuneOut").innerHTML="";
+  const b=$("goTune"); b.disabled=true; $("tuneStatus").textContent="计算中…";
+  $("tuneOut").className=""; $("tuneOut").innerHTML="";
   try{
     const fd=new FormData(); fd.append("file",f); fd.append("target",$("target").value);
     fd.append("use_llm",$("useLLM").checked?"true":"false");
     const d=await(await api("/api/tune",{method:"POST",body:fd})).json();
-    let html=md(d.metrics_md);
-    if(d.plot) html+="<h3>曲线</h3><img class='chart' src='/api/file/"+encodeURIComponent(d.plot)+"?t="+Date.now()+"' alt='阶跃响应曲线'>";
-    if(d.report_md) html+="<h3>调参报告</h3><p><a href='/api/file/"+encodeURIComponent(d.report_md)+"' target='_blank'>预览 Markdown</a>"
-      +(d.report_docx?"　<a href='/api/file/"+encodeURIComponent(d.report_docx)+"'>下载 Word</a>":"")+"</p>";
-    $("tuneOut").innerHTML=html;
+    let h=`<div class="article">${md(d.metrics_md)}`;
+    if(d.plot) h+=`<h3>曲线</h3><img class="chart" src="/api/file/${encodeURIComponent(d.plot)}?t=${Date.now()}" alt="阶跃响应曲线">`;
+    if(d.report_md) h+=`<h3>调参报告</h3><p><a href="/api/file/${encodeURIComponent(d.report_md)}" target="_blank">预览 Markdown</a>　`
+      +(d.report_docx?`<a href="/api/file/${encodeURIComponent(d.report_docx)}">下载 Word</a>`:"")+"</p>";
+    $("tuneOut").innerHTML=h+"</div>";
     $("tuneStatus").textContent="完成";
     loadFiles();
-  }catch(e){$("tuneStatus").textContent="失败："+e.message}
-  finally{b.disabled=false}
+  }catch(e){ $("tuneOut").innerHTML=`<div class="note err">${ic("alert")}${esc(e.message)}</div>` }
+  finally{ b.disabled=false }
 });
 
-// ── 成果库 ──
+/* ── 成果库 ── */
+const KIND={md:["doc","Markdown"],docx:["file","Word"],png:["img","图片"],csv:["box","数据"]};
 async function loadFiles(){
   try{
     const d=await(await api("/api/reports")).json();
     $("filesStatus").textContent="共 "+d.items.length+" 个文件";
     $("files").innerHTML=d.items.map(x=>{
-      const kind=x.kind==="docx"?"Word":x.kind==="png"?"图片":x.kind==="md"?"Markdown":x.kind;
-      const act=(x.kind==="md"?`<a href="#" data-md="${esc(x.name)}">预览</a>　`:"")
-               +(x.kind==="png"?`<a href="#" data-img="${esc(x.name)}">查看</a>　`:"")
+      const [i,label]=KIND[x.kind]||["file",x.kind];
+      const act=(x.kind==="md"?`<a href="#" data-md="${esc(x.name)}">预览</a>`:"")
+               +(x.kind==="png"?`<a href="#" data-img="${esc(x.name)}">查看</a>`:"")
                +`<a href="/api/file/${encodeURIComponent(x.name)}">下载</a>`;
-      return `<li><span><span class="kind">${kind}</span>${esc(x.name)}</span>
-        <span class="muted">${(x.size/1024).toFixed(1)} KB　${x.mtime}　${act}</span></li>`;
-    }).join("")||"<li class='empty'>还没有产物</li>";
+      return `<li><span class="fi">${ic(i)}</span>
+        <span class="nm">${esc(x.name)}</span>
+        <span class="pill neutral">${label}</span>
+        <span class="meta"><span>${(x.size/1024).toFixed(1)} KB</span><span>${x.mtime}</span><span>${act}</span></span></li>`;
+    }).join("")||`<li><div class="empty">${ic("box")}<div>还没有产物，先去上面跑一次</div></div></li>`;
   }catch(e){$("filesStatus").textContent="列表失败："+e.message}
 }
 $("refresh").addEventListener("click",loadFiles);
 $("files").addEventListener("click",async e=>{
-  const a=e.target.closest("a"); if(!a)return;
+  const a=e.target.closest("a"); if(!a) return;
+  const box=()=>{let el=$("reportView"); if(!el){el=document.createElement("div");el.id="reportView";$("panelTune").appendChild(el)} return el};
   if(a.dataset.md){e.preventDefault();
     const d=await(await api("/api/file-text/"+encodeURIComponent(a.dataset.md))).json();
-    $("tuneOut").innerHTML="<h3>"+esc(a.dataset.md)+"</h3>"+md(d.text);
-    switchTab("tune"); window.scrollTo({top:0,behavior:"smooth"});
+    box().innerHTML=`<div class="card pad-lg article">${md(d.text)}</div>`;
+    box().scrollIntoView({behavior:"smooth",block:"start"});
   }
   if(a.dataset.img){e.preventDefault();
-    $("tuneOut").innerHTML="<h3>"+esc(a.dataset.img)+"</h3><img class='chart' src='/api/file/"+encodeURIComponent(a.dataset.img)+"?t="+Date.now()+"'>";
-    switchTab("tune"); window.scrollTo({top:0,behavior:"smooth"});
+    box().innerHTML=`<div class="card pad-lg"><h3 style="margin-bottom:var(--s3)">${esc(a.dataset.img)}</h3>
+      <img class="chart" src="/api/file/${encodeURIComponent(a.dataset.img)}?t=${Date.now()}"></div>`;
+    box().scrollIntoView({behavior:"smooth",block:"start"});
   }
 });
-
-// 支持直接以 #分区 打开
-if(location.hash.length>1){ const id=location.hash.slice(1);
-  const t=setInterval(()=>{ if(state.domains.length){clearInterval(t); if(state.domains.some(x=>x.id===id&&x.implemented)) openDomain(id);} },120); }
+if(location.hash.length>1){
+  const id=location.hash.slice(1);
+  const t=setInterval(()=>{ if(state.domains.length){clearInterval(t);
+    if(state.domains.some(x=>x.id===id&&x.implemented)) openDomain(id);} },120);
+}
 </script>
 </body>
 </html>

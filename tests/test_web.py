@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -41,14 +42,24 @@ def main() -> int:
           "<style>" in html and "<script>" in html and "cdn" not in html.lower())
 
     print("\n== 1b. 信息架构：小白第一眼只看得到「选择竞赛」==")
-    check("首屏是分区选择视图", 'id="viewHome"' in html and "选择一个竞赛" in html)
+    check("首屏是分区选择视图（含 hero 标题与分区容器）",
+          'id="viewHome"' in html and "把竞赛赛题" in html and 'id="featuredCard"' in html)
     check("首屏没有技术参数（最多步数藏在设置里）",
           'id="settingsDrawer"' in html and html.index('id="settingsDrawer"') < html.index('id="steps"'))
-    check("设置抽屉默认隐藏", 'id="settingsDrawer" hidden' in html)
+    check("设置抽屉默认隐藏（未加 on 类，aria-hidden=true）",
+          'id="settingsDrawer"' in html and 'aria-hidden="true"' in html and "drawer on" not in html)
     check("设置里含「最多步数」并带人话解释", "最多步数" in html and "最多思考几步" in html)
-    check("调参面板默认隐藏（只在具备该能力的分区显示）",
-          'id="panelTune" hidden' in html)
+    check("调参面板默认 hidden（只在具备该能力的分区显示）",
+          re.search(r'id="panelTune"[^>]*\shidden', html) is not None)
+    check("显式兜住 hidden（否则 .work{display:grid} 会让 hidden 失效、两个页签同时露出）",
+          "[hidden]{display:none" in html.replace(" ", ""))
     check("二级页面有返回入口", 'id="backHome"' in html and "全部竞赛" in html)
+    check("首页统计数字来自接口（无硬编码假数据）",
+          'id="stats"' in html and '["题库真题"' in html)
+    check("样式系统用 CSS 变量（可复用给其他模块）",
+          "--b600:" in html and "--sh-md:" in html and "var(--r-card)" in html)
+    check("网格子项有 min-width:0 防 grid blowout",
+          "minmax(0,1fr)" in html and ".work>*{min-width:0}" in html.replace(" ", ""))
     emojis = ["🔧", "↳", "✅", "❌", "⚙", "🎯", "🚧"]
     hit = [e for e in emojis if e in html]
     check("界面零 emoji（设计规范：不用字符当图标）", not hit, "仍含：" + "".join(hit))
