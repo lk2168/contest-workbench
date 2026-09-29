@@ -97,6 +97,9 @@ diansai-agent/
 │       ├── report.py            # 写 md + 转 docx
 │       └── md2docx.py           # 随仓库带走的 Markdown→Word 转换器
 ├── docs/                        # 历年题名与分类、历年规律与 2027 选题预测（含 Word 版）
+├── scripts/
+│   ├── fetch_history.py         # 重建题库：从公开仓库按年份批量拉赛题 PDF → 文本
+│   └── extract_shiti.py         # 把任意目录的赛题 PDF 批量抽成可读文本（修"一字一行"）
 ├── tests/test_offline.py        # 离线自测（19 项，不含 API 调用）
 ├── data/题库/                    # 本地赛题语料（★ 不进版本控制，见下）
 ├── requirements.txt
@@ -116,7 +119,11 @@ diansai-agent/
 | 2024 | 省赛 **A–H 8 题** |
 | 2026 | 赛区赛（TI 杯）**A–H 8 题完整 + 官方答疑汇总** |
 
-- 赛前想加新题：把 PDF 丢进 `data/题库/<年份>/`，或改 `data/题库/_fetch_history.py` 里的年份清单再跑一次。
+- 赛前想加新题：把 PDF 丢进 `data/题库/<年份>/`，或用 `scripts/` 下的脚本：
+  ```bash
+  python scripts/fetch_history.py 2025 2023        # 按年份从公开仓库批量拉（走 ghproxy 镜像）
+  python scripts/extract_shiti.py <源目录> [目标目录]   # 把任意目录的 PDF 抽成可读文本
+  ```
 - 题库位置可配：环境变量 `DIANSAI_KB` 或在 `.env` 里写 `DIANSAI_KB=...`。
 - ⚠️ **赛题原文不进 Git**（`.gitignore` 已排除 `data/`）：赛题著作权属于全国大学生电子设计竞赛组织委员会及赛区组委会，本仓库只提交**题目名称索引与来源链接**（见 `docs/历年题名与分类.md`）。
 
