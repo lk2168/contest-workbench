@@ -5,11 +5,15 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![测试](https://github.com/lk2168/diansai-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/lk2168/diansai-agent/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/lk2168/diansai-agent?label=release&color=blue)](https://github.com/lk2168/diansai-agent/releases/latest)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![status](https://img.shields.io/badge/status-v0.4-orange)
 
 **给谁用**：参加电赛的在校学生，尤其是不熟悉 AI 工具的人。有网页界面、**队友零安装**就能用；
 Agent 每一步在做什么都显示出来；关键指标由本地算法计算、可以自己复核。
+
+> ### ⬇️ [下载 Windows 版（免装 Python，双击即用）](https://github.com/lk2168/diansai-agent/releases/latest)
+> 双击 → 浏览器自动打开 → 设置里填自己的 DeepSeek API Key → 选题目 → 开始分析。
+> 首次启动要解包，约 5–10 秒属正常；不含题库（版权原因），详见[发行说明](https://github.com/lk2168/diansai-agent/releases/latest)。
 
 ![网页端首屏](docs/web-首屏.png)
 
@@ -33,16 +37,13 @@ Agent 每一步在做什么都显示出来；关键指标由本地算法计算�
 
 ## 两种用法
 
-**方式一：打包成 exe（给不想碰命令行的同学）**
+**方式一：直接下载 exe（给不想碰命令行的同学）**
 
-```bash
-pip install pyinstaller
-python scripts/build_exe.py          # 产出 dist/diansai-agent.exe（约 46 MB）
-```
-
-双击 exe 即用：自动起本地服务并打开浏览器，**不需要装 Python**。
-第一次用点右上角「设置」把 DeepSeek API Key 填进去就行（存在用户目录，不上传）。
+到 [**Releases**](https://github.com/lk2168/diansai-agent/releases/latest) 下载 `diansai-agent.exe`，双击即可。
+不需要装 Python；第一次用点右上角「设置」把 DeepSeek API Key 填进去（存在用户目录，不上传）。
 Exe 同目录下放 `data/题库/<分区>/` 就能读到自己的题库。
+
+> 想自己打包：`pip install pyinstaller && python scripts/build_exe.py` → `dist/diansai-agent.exe`（约 46 MB）。
 > ⚠️ 冷启动要解包 46 MB，约 5–10 秒，属正常。
 
 **方式二：从源码跑（开发 / 想改代码）**

@@ -18,3 +18,6 @@ build/
 dist/
 *.spec
 
+
+# 发布时临时用的说明文件（正式副本放 docs/releases/）
+.release-notes-*.md
