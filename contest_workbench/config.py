@@ -3,7 +3,7 @@
 
 Key 的读取优先级（先命中先用）：
   1. 环境变量            DEEPSEEK_API_KEY / DEEPSEEK_MODEL / DEEPSEEK_BASE_URL
-  2. 用户配置文件        ~/.diansai-agent/.env      ← 网页端「设置」里填的 Key 存这里
+  2. 用户配置文件        ~/.contest-workbench/.env      ← 网页端「设置」里填的 Key 存这里
   3. 仓库根目录 .env     （开发时用；不进版本控制）
   4. DSH 的凭据文件      $DSH_HOME/.credentials.yaml 的 refs.DEEPSEEK_API_KEY
 
@@ -39,10 +39,46 @@ DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-flash"  # 本机实测可用：deepseek-flash / deepseek-v4-pro
 
 
+def env_first(*names: str, default: str = "") -> str:
+    """按顺序取第一个非空环境变量。
+
+    用途：**兼容改名前的旧变量名**。本项目 v0.5 从 diansai-agent 改名为 contest-workbench
+    （变量前缀 DIANSAI_ → CONTEST_），老用户的脚本/命令行不用改也能继续用。
+    """
+    for n in names:
+        v = os.environ.get(n)
+        if v:
+            return v
+    return default
+
+
+# 改名前的用户配置目录（v0.5 起用 ~/.contest-workbench）
+LEGACY_USER_DIR = Path.home() / ".diansai-agent"
+
+
+def _migrate_legacy_config(target: Path) -> None:
+    """一次性迁移：旧目录里有 Key、新目录里没有 → 复制过来（不覆盖已有文件）。
+
+    没有这一步，改名就等于把用户已经填好的 API Key "弄丢"了。
+    """
+    try:
+        if target.resolve() == LEGACY_USER_DIR.resolve():
+            return
+        old = LEGACY_USER_DIR / ".env"
+        new = target / ".env"
+        if old.exists() and not new.exists():
+            target.mkdir(parents=True, exist_ok=True)
+            new.write_text(old.read_text(encoding="utf-8"), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def user_dir() -> Path:
-    """用户级配置目录（可用 DIANSAI_CONFIG_DIR 覆盖，测试用）。"""
-    env = os.environ.get("DIANSAI_CONFIG_DIR")
-    d = Path(env) if env else (Path.home() / ".diansai-agent")
+    """用户级配置目录（可用 CONTEST_CONFIG_DIR 覆盖，测试用）。"""
+    env = env_first("CONTEST_CONFIG_DIR", "DIANSAI_CONFIG_DIR")
+    d = Path(env) if env else (Path.home() / ".contest-workbench")
+    if not env:
+        _migrate_legacy_config(d)      # 显式指定目录（测试）时不迁移
     try:
         d.mkdir(parents=True, exist_ok=True)
     except Exception:
@@ -109,7 +145,7 @@ def save_user_config(api_key: str | None = None, model: str | None = None,
         data["DEEPSEEK_MODEL"] = model.strip()
     if base_url is not None:
         data["DEEPSEEK_BASE_URL"] = base_url.strip()
-    lines = ["# 由「竞赛 Agent 平台」网页端设置保存（本机私有，请勿提交到版本库）"]
+    lines = ["# 由「大学生竞赛工作台」网页端设置保存（本机私有，请勿提交到版本库）"]
     for k, v in data.items():
         if v == "":
             continue
@@ -159,10 +195,12 @@ class Config:
             or DEFAULT_MODEL
         )
         # 题库位置也可以写在配置文件里（tools/shiti.py 会读这个环境变量）
-        kb = (os.environ.get("DIANSAI_KB") or user_file.get("DIANSAI_KB")
-              or env_file.get("DIANSAI_KB"))
+        # 兼容改名前的 DIANSAI_KB
+        kb = (env_first("CONTEST_KB", "DIANSAI_KB")
+              or user_file.get("CONTEST_KB") or user_file.get("DIANSAI_KB")
+              or env_file.get("CONTEST_KB") or env_file.get("DIANSAI_KB"))
         if kb:
-            os.environ["DIANSAI_KB"] = kb
+            os.environ["CONTEST_KB"] = kb
         try:
             OUT_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:

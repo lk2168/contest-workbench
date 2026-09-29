@@ -6,7 +6,7 @@
     python scripts/build_exe.py              # 直接构建
     python scripts/build_exe.py --clean       # 先删掉 build/dist 再构建
 
-产物：dist/diansai-agent.exe（双击即用，不需要用户装 Python）
+产物：dist/contest-workbench.exe（双击即用，不需要用户装 Python）
 
 ★ 打包时要处理的三件事（都是踩过才知道的）：
   1. **随包资源**：prompts / web 静态文件 / 示例数据 必须显式 --add-data，否则运行时找不到
@@ -34,8 +34,8 @@ for _s in (sys.stdout, sys.stderr):
 SEP = ";" if sys.platform.startswith("win") else ":"
 
 DATA = [
-    ("diansai_agent/prompts", "diansai_agent/prompts"),
-    ("diansai_agent/web/static", "diansai_agent/web/static"),
+    ("contest_workbench/prompts", "contest_workbench/prompts"),
+    ("contest_workbench/web/static", "contest_workbench/web/static"),
     ("samples", "samples"),
 ]
 
@@ -47,15 +47,15 @@ HIDDEN = [
     "uvicorn.protocols.http.h11_impl",
     "uvicorn.protocols.websockets", "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan", "uvicorn.lifespan.on",
-    "diansai_agent.tools.md2docx",   # 报告转换器（惰性 import，显式声明更稳）
+    "contest_workbench.tools.md2docx",   # 报告转换器（惰性 import，显式声明更稳）
     "docx",                          # python-docx
 ]
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="打包 diansai-agent 为单文件 exe")
+    ap = argparse.ArgumentParser(description="打包 contest-workbench 为单文件 exe")
     ap.add_argument("--clean", action="store_true", help="构建前清掉 build/ 与 dist/")
-    ap.add_argument("--name", default="diansai-agent", help="产物名，默认 diansai-agent")
+    ap.add_argument("--name", default="contest-workbench", help="产物名，默认 contest-workbench")
     ap.add_argument("--onedir", action="store_true", help="打成目录（启动快，但不是一个文件）")
     args = ap.parse_args()
 

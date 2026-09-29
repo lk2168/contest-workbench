@@ -1,19 +1,19 @@
-# 电赛 Agent（diansai-agent）
+# 大学生竞赛工作台（contest-workbench）
 
 > 把一道**全国大学生电子设计竞赛（电赛）赛题**，变成一份**参赛队第二天早上就能照着干的方案**；
 > 控制类还可以把实测数据算成超调量、上升时间、调节时间等指标，并给出 PID 调整建议。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![测试](https://github.com/lk2168/diansai-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/lk2168/diansai-agent/actions/workflows/tests.yml)
-[![Release](https://img.shields.io/github/v/release/lk2168/diansai-agent?label=release&color=blue)](https://github.com/lk2168/diansai-agent/releases/latest)
+[![测试](https://github.com/lk2168/contest-workbench/actions/workflows/tests.yml/badge.svg)](https://github.com/lk2168/contest-workbench/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/lk2168/contest-workbench?label=release&color=blue)](https://github.com/lk2168/contest-workbench/releases/latest)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 
 **给谁用**：参加电赛的在校学生，尤其是不熟悉 AI 工具的人。有网页界面、**队友零安装**就能用；
 Agent 每一步在做什么都显示出来；关键指标由本地算法计算、可以自己复核。
 
-> ### ⬇️ [下载 Windows 版（免装 Python，双击即用）](https://github.com/lk2168/diansai-agent/releases/latest)
+> ### ⬇️ [下载 Windows 版（免装 Python，双击即用）](https://github.com/lk2168/contest-workbench/releases/latest)
 > 双击 → 浏览器自动打开 → 设置里填自己的 DeepSeek API Key → 选题目 → 开始分析。
-> 首次启动要解包，约 5–10 秒属正常；不含题库（版权原因），详见[发行说明](https://github.com/lk2168/diansai-agent/releases/latest)。
+> 首次启动要解包，约 5–10 秒属正常；不含题库（版权原因），详见[发行说明](https://github.com/lk2168/contest-workbench/releases/latest)。
 
 ![网页端首屏](docs/web-首屏.png)
 
@@ -39,11 +39,11 @@ Agent 每一步在做什么都显示出来；关键指标由本地算法计算�
 
 **方式一：直接下载 exe（给不想碰命令行的同学）**
 
-到 [**Releases**](https://github.com/lk2168/diansai-agent/releases/latest) 下载 `diansai-agent.exe`，双击即可。
+到 [**Releases**](https://github.com/lk2168/contest-workbench/releases/latest) 下载 `contest-workbench.exe`，双击即可。
 不需要装 Python；第一次用点右上角「设置」把 DeepSeek API Key 填进去（存在用户目录，不上传）。
 Exe 同目录下放 `data/题库/<分区>/` 就能读到自己的题库。
 
-> 想自己打包：`pip install pyinstaller && python scripts/build_exe.py` → `dist/diansai-agent.exe`（约 46 MB）。
+> 想自己打包：`pip install pyinstaller && python scripts/build_exe.py` → `dist/contest-workbench.exe`（约 46 MB）。
 > ⚠️ 冷启动要解包 46 MB，约 5–10 秒，属正常。
 
 **方式二：从源码跑（开发 / 想改代码）**
@@ -138,7 +138,7 @@ python tests/test_web.py        # 48 项：网页接口 + 上传调参 + 错误�
 技术取舍（**为"给不懂 AI 的同学用"服务**）：
 - **FastAPI + 原生 HTML/JS**：仓库里**没有 node_modules、没有构建步骤**，`pip install` 完就能跑；
 - **SSE 而不是 WebSocket**：单向推流足够，实现简单、不需要额外依赖；
-- **单文件前端**（`diansai_agent/web/static/index.html`）：样式与脚本内联、Markdown 自带极简渲染器，
+- **单文件前端**（`contest_workbench/web/static/index.html`）：样式与脚本内联、Markdown 自带极简渲染器，
   图标是**内联 SVG**（1.75 描边，随文字颜色），不引任何 CDN（离线可用）；
 - **响应式**：≤920px 单列、≤760px 收顶栏、长路径强制断行（`overflow-wrap:anywhere`）。
 
@@ -165,7 +165,7 @@ python tests/test_web.py        # 48 项：网页接口 + 上传调参 + 错误�
                           └─▶ 要调工具 ──▶ 执行 ──▶ 结果回灌 ┘
 ```
 
-核心就是 `diansai_agent/loop.py` 里那 30 行：**模型只负责"决定下一步做什么"，程序负责"真的去做"，再把结果喂回去**。
+核心就是 `contest_workbench/loop.py` 里那 30 行：**模型只负责"决定下一步做什么"，程序负责"真的去做"，再把结果喂回去**。
 所有 Agent（Claude Code、Codex、DSH 自己）都是这个骨架。这里没有魔法，也没有框架黑盒。
 
 ### 6 个工具
@@ -184,7 +184,7 @@ python tests/test_web.py        # 48 项：网页接口 + 上传调参 + 错误�
 ## 竞赛平台：分区制（Domain）
 
 ```
-diansai_agent/
+contest_workbench/
 ├── loop.py            ← Agent 骨架（不随竞赛变）
 ├── llm.py / config.py ← 模型与配置（不随竞赛变）
 ├── domains.py         ← ★ 分区配置：题库目录 / 提示词 / 模板 / 该分区启用哪些工具
@@ -201,7 +201,7 @@ data/题库/<分区>/<年份批次>/<题号>题_<题名>.md
 
 **新增一个竞赛分区要做的三件事**（约半天）：
 1. `data/题库/<分区>/<年份>/` 放题库（可用 `scripts/extract_shiti.py` 抽 PDF）；
-2. 加一份提示词（角色 + 铁律 + 报告模板，见 `diansai_agent/prompts/`）；
+2. 加一份提示词（角色 + 铁律 + 报告模板，见 `contest_workbench/prompts/`）；
 3. 在 `domains.py` 里登记一条 `Domain`（填题库目录、提示词文件名、启用哪些工具）。
 然后 `python cli.py --domain <分区> analyze <题号>` 就能用。
 
@@ -210,9 +210,9 @@ data/题库/<分区>/<年份批次>/<题号>题_<题名>.md
 ## 项目结构
 
 ```
-diansai-agent/
+contest-workbench/
 ├── cli.py                       # 命令行入口（analyze / tune / --check / --domains）
-├── diansai_agent/
+├── contest_workbench/
 │   ├── config.py                # Key/模型/题库路径（Key 来源：环境变量 → .env → DSH 凭据文件）
 │   ├── domains.py               # ★ 竞赛分区配置（平台化的核心抽象）
 │   ├── llm.py                   # 一次模型调用（requests 直连，不用 SDK）
@@ -264,7 +264,7 @@ diansai-agent/
   python scripts/fetch_history.py 2025 2023        # 按年份从公开仓库批量拉（走 ghproxy 镜像）
   python scripts/extract_shiti.py <源目录> [目标目录]   # 把任意目录的 PDF 抽成可读文本
   ```
-- 题库位置可配：环境变量 `DIANSAI_KB` 或在 `.env` 里写 `DIANSAI_KB=...`。
+- 题库位置可配：环境变量 `CONTEST_KB` 或在 `.env` 里写 `CONTEST_KB=...`。
 - ⚠️ **赛题原文不进 Git**（`.gitignore` 已排除 `data/`）：赛题著作权属于全国大学生电子设计竞赛组织委员会及赛区组委会，本仓库只提交**题目名称索引与来源链接**（见 `docs/历年题名与分类.md`）。
 
 ---
@@ -356,11 +356,11 @@ _当前版本 v0.3（网页端）：赛题分析 + 控制类调参 + 竞赛分�
 ## 参与贡献
 
 **不会写代码也能帮上忙**：许愿竞赛分区、报 bug、提供题库来源线索、改文档都算贡献。
-完整说明见 [CONTRIBUTING.md](CONTRIBUTING.md)，讨论区在 [Discussions](https://github.com/lk2168/diansai-agent/discussions)。
+完整说明见 [CONTRIBUTING.md](CONTRIBUTING.md)，讨论区在 [Discussions](https://github.com/lk2168/contest-workbench/discussions)。
 
-- 许愿一个新竞赛（数学建模 / 智能汽车 / 蓝桥杯…）→ [分区许愿](https://github.com/lk2168/diansai-agent/issues/new?template=feature_request.yml)
-- 有东西坏了 → [报 Bug](https://github.com/lk2168/diansai-agent/issues/new?template=bug_report.yml)
-- 题库找不到题 / 年份不对 → [题库反馈](https://github.com/lk2168/diansai-agent/issues/new?template=tiku.yml)
+- 许愿一个新竞赛（数学建模 / 智能汽车 / 蓝桥杯…）→ [分区许愿](https://github.com/lk2168/contest-workbench/issues/new?template=feature_request.yml)
+- 有东西坏了 → [报 Bug](https://github.com/lk2168/contest-workbench/issues/new?template=bug_report.yml)
+- 题库找不到题 / 年份不对 → [题库反馈](https://github.com/lk2168/contest-workbench/issues/new?template=tiku.yml)
 
 > ⚠️ 提 Issue / PR 时请勿粘贴 API Key，也**不要上传赛题原文、赛区《答疑》、评分标准**（版权不属于我们，见 [NOTICE.md](NOTICE.md)）。
 

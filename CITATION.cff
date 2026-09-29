@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "如果这个项目对你的竞赛备赛或学习有帮助，欢迎按下面的格式引用。"
-title: "diansai-agent：面向大学生竞赛的 AI Agent 平台（电赛分区）"
+title: "大学生竞赛工作台（contest-workbench）：面向大学生竞赛的 AI Agent 平台"
 abstract: >-
   一个把竞赛赛题变成可执行方案的 Agent 平台。当前实现了电赛分区：
   赛题分析（读题 / 查官方答疑 / 跨年份检索 → 出作战方案）与控制类调参助手
@@ -10,10 +10,10 @@ type: software
 authors:
   - name: "lk2168"
     website: "https://github.com/lk2168"
-repository-code: "https://github.com/lk2168/diansai-agent"
-url: "https://github.com/lk2168/diansai-agent"
+repository-code: "https://github.com/lk2168/contest-workbench"
+url: "https://github.com/lk2168/contest-workbench"
 license: MIT
-version: "0.3.0"
+version: "0.5.0"
 date-released: "2026-09-30"
 keywords:
   - 全国大学生电子设计竞赛
@@ -28,12 +28,12 @@ keywords:
   - FastAPI
 preferred-citation:
   type: software
-  title: "diansai-agent：面向大学生竞赛的 AI Agent 平台"
+  title: "大学生竞赛工作台（contest-workbench）"
   authors:
     - name: "lk2168"
   year: 2026
-  version: "0.3.0"
-  url: "https://github.com/lk2168/diansai-agent"
+  version: "0.5.0"
+  url: "https://github.com/lk2168/contest-workbench"
 notes: >-
   赛题原文、赛区答疑与评分标准的著作权不属于本项目，不包含在本仓库中；
   本项目的 MIT 许可覆盖自有的代码、提示词、文档与截图。详见仓库内 NOTICE.md。

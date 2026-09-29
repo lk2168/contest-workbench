@@ -32,8 +32,8 @@
 | [NumPy](https://github.com/numpy/numpy) | 调参指标计算 | BSD-3-Clause |
 | [Matplotlib](https://github.com/matplotlib/matplotlib) | 阶跃响应曲线图 | PSF-based（BSD 兼容） |
 | [FastAPI](https://github.com/fastapi/fastapi) / [Uvicorn](https://github.com/encode/uvicorn) / [python-multipart](https://github.com/Kludex/python-multipart) | 网页端 | MIT / BSD-3-Clause / Apache-2.0 |
-| ★ [Lucide](https://github.com/lucide-icons/lucide) | 网页端图标（`diansai_agent/web/static/index.html` 里的内联 SVG 路径取自 Lucide） | **ISC** |
-| `diansai_agent/tools/md2docx.py` | Markdown→Word 转换器 | 本项目自有代码（MIT） |
+| ★ [Lucide](https://github.com/lucide-icons/lucide) | 网页端图标（`contest_workbench/web/static/index.html` 里的内联 SVG 路径取自 Lucide） | **ISC** |
+| `contest_workbench/tools/md2docx.py` | Markdown→Word 转换器 | 本项目自有代码（MIT） |
 | 历年题目目录整理 [CCBP/NUEDC_Topic](https://github.com/CCBP/NUEDC_Topic) | 题目索引与来源 | 见其仓库许可 |
 
 > **Lucide 的 ISC 许可要求保留版权与许可声明**，故在此列出：

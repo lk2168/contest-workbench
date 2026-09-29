@@ -25,12 +25,12 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from diansai_agent.config import REPO_ROOT, Config
-from diansai_agent.domains import DOMAINS, get_domain, list_domains, prompt_text
-from diansai_agent.llm import LLM
-from diansai_agent.loop import Agent
-from diansai_agent.tools import TOOL_SCHEMAS, call_tool
-from diansai_agent.tools.shiti import list_shiti
+from contest_workbench.config import REPO_ROOT, Config
+from contest_workbench.domains import DOMAINS, get_domain, list_domains, prompt_text
+from contest_workbench.llm import LLM
+from contest_workbench.loop import Agent
+from contest_workbench.tools import TOOL_SCHEMAS, call_tool
+from contest_workbench.tools.shiti import list_shiti
 
 DEFAULT_DOMAIN = "diansai"
 
@@ -117,7 +117,7 @@ def cmd_tune(cfg: Config, domain_id: str, path: str, target: float | None,
         if not cfg.has_key and not no_llm:
             print("\n⚠️ 没找到 API Key，退化为只出本地结果。")
         body = (f"# {stem} 阶跃响应调参报告（本地计算版）\n\n"
-                f"> 由 `diansai-agent` 本地算法生成（未调用模型）。\n\n{local_md}\n")
+                f"> 由 `contest-workbench` 本地算法生成（未调用模型）。\n\n{local_md}\n")
         print("\n" + call_tool("write_report", {"filename": report_name, "content": body}))
         return 0
 
@@ -143,7 +143,7 @@ def cmd_web(host: str, port: int, reload: bool) -> int:
     except ImportError:
         print("❌ 没装 fastapi/uvicorn。请先：pip install fastapi \"uvicorn[standard]\" python-multipart")
         return 2
-    from diansai_agent.web.app import app
+    from contest_workbench.web.app import app
     shown = host if host not in ("0.0.0.0",) else "127.0.0.1"
     print(f"── 网页端启动中 ──\n浏览器打开：http://{shown}:{port}\n"
           f"（局域网共享：换成 --host 0.0.0.0，队友用你的局域网 IP 访问；Ctrl+C 停止）")
@@ -153,7 +153,7 @@ def cmd_web(host: str, port: int, reload: bool) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="竞赛 Agent（多分区）：赛题分析 / 控制类调参")
-    ap.add_argument("--version", action="version", version="diansai-agent 0.2.0")
+    ap.add_argument("--version", action="version", version="contest-workbench 0.5.0")
     ap.add_argument("--domain", default=DEFAULT_DOMAIN, help=f"竞赛分区（默认 {DEFAULT_DOMAIN}）")
     ap.add_argument("--domains", action="store_true", help="列出所有分区后退出")
     ap.add_argument("--check", action="store_true", help="检查配置与题库，不调用模型")
@@ -184,7 +184,7 @@ def main() -> int:
     if domain_id not in DOMAINS:
         print(f"❌ 未知分区「{domain_id}」。可用：{', '.join(DOMAINS)}")
         return 2
-    os.environ["DIANSAI_DOMAIN"] = domain_id
+    os.environ["CONTEST_DOMAIN"] = domain_id
 
     if args.domains:
         print(list_domains())

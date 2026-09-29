@@ -12,7 +12,7 @@
 | **贡献题库线索** | 开 [题库 Issue](../../issues/new?template=tiku.yml)，给出**公开可获取**的赛题来源链接 | 不用 |
 | **改文档 / 修错别字 / 补例子** | 直接提 PR 改 `README.md`、`docs/*.md` | 基本不用 |
 | **接一个新竞赛分区** | 见下面第三节（题目 + 提示词 + 一处登记，**不用改核心代码**） | 要一点 Python |
-| **加一个工具 / 加测试** | 见 `diansai_agent/tools/` 与 `tests/` | 要 Python |
+| **加一个工具 / 加测试** | 见 `contest_workbench/tools/` 与 `tests/` | 要 Python |
 
 > ⚠️ **不要提交赛题原文、赛区《答疑》、评分标准**（版权不属于我们，见 [NOTICE.md](NOTICE.md)）。
 > 题库只放在你**本地** `data/题库/`，该目录已被 `.gitignore` 排除。
@@ -20,8 +20,8 @@
 ## 二、本地跑起来（10 分钟）
 
 ```bash
-git clone https://github.com/lk2168/diansai-agent.git
-cd diansai-agent
+git clone https://github.com/lk2168/contest-workbench.git
+cd contest-workbench
 pip install -r requirements.txt        # 国内建议加 -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 看配置与工具（不花钱）
@@ -42,9 +42,9 @@ python cli.py web                      # → http://127.0.0.1:8765
 1. **题库**：把该竞赛的赛题整理成 Markdown 放进
    `data/题库/<分区id>/<年份批次>/<题号>题_<题名>.md`
    （PDF 可用 `python scripts/extract_shiti.py <源目录> <目标目录>` 批量转文本）
-2. **提示词**：在 `diansai_agent/prompts/` 加一份，至少要有「角色 + 铁律 + 报告模板」
+2. **提示词**：在 `contest_workbench/prompts/` 加一份，至少要有「角色 + 铁律 + 报告模板」
    （照抄 `analyze.md` 的结构改）
-3. **登记**：在 `diansai_agent/domains.py` 的 `DOMAINS` 里加一条 `Domain(...)`，
+3. **登记**：在 `contest_workbench/domains.py` 的 `DOMAINS` 里加一条 `Domain(...)`，
    填 `id / name / kb_subdir / system_prompt / analyze_template / tools`
 
 然后 `python cli.py --domain <分区id> analyze <题号>` 就能用；网页端的页签会**自动**按

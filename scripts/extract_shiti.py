@@ -28,7 +28,7 @@ from pypdf import PdfReader
 ROOT = Path(__file__).resolve().parent.parent
 # 默认源目录用「相对/中性」路径，别把某人机器的绝对路径写进开源仓库
 # （原来写死了 C:\Users\<某人>\Desktop\... 既泄露用户名，对别人也完全没用）
-DEFAULT_SRC = Path(os.environ.get("DIANSAI_SRC", "真题库"))
+DEFAULT_SRC = Path(os.environ.get("CONTEST_SRC", "真题库"))
 DEFAULT_DST = ROOT / "data" / "题库" / "2026-省赛"
 
 

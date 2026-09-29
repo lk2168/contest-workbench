@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """打包成 exe 后的启动入口：起网页端服务 + 自动打开浏览器。
 
-为什么不直接 `uvicorn diansai_agent.web.app:app`：
+为什么不直接 `uvicorn contest_workbench.web.app:app`：
   打包（PyInstaller）后没有"当前目录"这个前提，模块也不是从磁盘 import 的字符串路径，
   所以必须传 **app 对象**；同时要自己处理端口占用与浏览器打开。
 
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
 
     url = f"http://127.0.0.1:{port}"
     print("=" * 56)
-    print("  竞赛 Agent 平台 已启动")
+    print("  大学生竞赛工作台 已启动")
     print(f"  浏览器打开：{url}")
     print("  关闭这个窗口即停止服务（数据与报告只存在本机）")
     print("=" * 56)

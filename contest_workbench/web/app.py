@@ -33,16 +33,16 @@ MODEL_OPTIONS = ["deepseek-flash", "deepseek-v4-pro"]
 
 # ── 平台自我介绍（也是首页"这个项目是什么"的事实来源，改这里就够）───────────
 PLATFORM = {
-    "name": "竞赛 Agent 平台",
+    "name": "大学生竞赛工作台",
     "tagline": "把竞赛赛题变成能照着干的方案；控制类数据算成可复核的指标",
-    "repo": "https://github.com/lk2168/diansai-agent",
+    "repo": "https://github.com/lk2168/contest-workbench",
 }
 
 MAX_UPLOAD = 20 * 1024 * 1024          # 单个上传文件上限 20 MB
 UPLOAD_DIR = OUT_DIR / "uploads"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title=PLATFORM["name"], version="0.3.0")
+app = FastAPI(title=PLATFORM["name"], version="0.5.0")
 
 
 # --------------------------------------------------------------------------- #
@@ -120,7 +120,7 @@ def api_domains() -> JSONResponse:
 @app.get("/api/shiti")
 def api_shiti(domain: str = "diansai") -> JSONResponse:
     import os
-    os.environ["DIANSAI_DOMAIN"] = domain
+    os.environ["CONTEST_DOMAIN"] = domain
     _domain_or_400(domain)
     return JSONResponse({"text": list_shiti()})
 
@@ -129,7 +129,7 @@ def api_shiti(domain: str = "diansai") -> JSONResponse:
 def api_shiti_list(domain: str = "diansai") -> JSONResponse:
     """结构化题目清单：年份/批次 + 题号 + 题名 + 文件名（网页端两级选择用）。"""
     import os
-    os.environ["DIANSAI_DOMAIN"] = domain
+    os.environ["CONTEST_DOMAIN"] = domain
     _domain_or_400(domain)
     items = list_shiti_structured()
     years = sorted({x["year"] for x in items}, reverse=True)
@@ -140,7 +140,7 @@ def api_shiti_list(domain: str = "diansai") -> JSONResponse:
 def api_shiti_detail(file: str, domain: str = "diansai", max_chars: int = 12000) -> JSONResponse:
     """读某一道题的正文（用 file 精确定位，避免年份歧义）。"""
     import os
-    os.environ["DIANSAI_DOMAIN"] = domain
+    os.environ["CONTEST_DOMAIN"] = domain
     _domain_or_400(domain)
     text = call_tool("read_shiti", {"file": file, "max_chars": max_chars})
     if is_error(text):
@@ -300,7 +300,7 @@ def api_settings_get() -> JSONResponse:
 
 @app.post("/api/settings")
 def api_settings_post(payload: dict) -> JSONResponse:
-    """保存设置到用户配置文件（~/.diansai-agent/.env）。
+    """保存设置到用户配置文件（~/.contest-workbench/.env）。
 
     字段语义：**不传** = 不改；**传空字符串** = 清空该项。
     打包成 exe 后程序目录可能不可写，所以设置一律存用户目录。

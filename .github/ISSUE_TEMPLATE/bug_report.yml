@@ -40,7 +40,7 @@ body:
     attributes:
       label: 版本
       description: 运行 `python cli.py --version` 的输出
-      placeholder: diansai-agent 0.3.0
+      placeholder: contest-workbench 0.3.0
     validations:
       required: true
   - type: dropdown

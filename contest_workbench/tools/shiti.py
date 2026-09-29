@@ -5,8 +5,8 @@
     data/题库/<分区>/<年份批次>/<题号>题_<题名>.md
 例如：data/题库/diansai/2026-省赛/H题_车载平衡滚球运动控制系统.md
 
-分区由环境变量 DIANSAI_DOMAIN 指定（CLI 的 --domain 会设置它），默认 diansai。
-另外支持环境变量 DIANSAI_KB 追加一个外部题库目录（内容按「年份目录+文件名」去重）。
+分区由环境变量 CONTEST_DOMAIN 指定（CLI 的 --domain 会设置它），默认 diansai。
+另外支持环境变量 CONTEST_KB 追加一个外部题库目录（内容按「年份目录+文件名」去重）。
 """
 from __future__ import annotations
 
@@ -14,11 +14,13 @@ import os
 import re
 from pathlib import Path
 
+from ..config import env_first
 from ..domains import KB_ROOT, get_domain
 
 
 def current_domain_id() -> str:
-    return (os.environ.get("DIANSAI_DOMAIN") or "diansai").strip().lower()
+    # 兼容改名前的 DIANSAI_DOMAIN
+    return (env_first("CONTEST_DOMAIN", "DIANSAI_DOMAIN") or "diansai").strip().lower()
 
 
 def kb_dirs() -> list[Path]:
@@ -31,7 +33,7 @@ def kb_dirs() -> list[Path]:
         dirs.append(get_domain(current_domain_id()).kb_dir())
     except KeyError:
         dirs.append(KB_ROOT / current_domain_id())
-    env = os.environ.get("DIANSAI_KB")
+    env = env_first("CONTEST_KB", "DIANSAI_KB")
     if env:
         dirs.append(Path(env))
     # 兼容：若题库根目录下直接躺着年份目录（老布局），也当一份题库

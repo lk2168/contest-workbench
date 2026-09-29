@@ -16,7 +16,7 @@ from pathlib import Path
 # ★ 隔离：把配置目录与 DSH 凭据路径都指到临时目录，测试**绝不碰你真实的配置文件**，
 #   并显式清空环境变量，让"有没有 Key"在测试里是确定性的。
 _TMP = Path(tempfile.mkdtemp(prefix="diansai-web-test-"))
-os.environ["DIANSAI_CONFIG_DIR"] = str(_TMP)
+os.environ["CONTEST_CONFIG_DIR"] = str(_TMP)
 os.environ["DSH_HOME"] = str(_TMP / "dsh-home")
 os.environ["DEEPSEEK_API_KEY"] = ""
 
@@ -30,7 +30,7 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 from fastapi.testclient import TestClient                                  # noqa: E402
-from diansai_agent.web.app import app                                       # noqa: E402
+from contest_workbench.web.app import app                                       # noqa: E402
 
 client = TestClient(app)
 PASS, FAIL, SKIP = [], [], []
@@ -39,7 +39,7 @@ PASS, FAIL, SKIP = [], [], []
 # 题库因版权不进仓库 → 没建题库的机器（CI）上，依赖题库的断言应「跳过」而非「失败」
 def _kb_ok() -> bool:
     try:
-        from diansai_agent.tools.shiti import list_shiti_structured
+        from contest_workbench.tools.shiti import list_shiti_structured
         return len(list_shiti_structured()) > 0
     except Exception:
         return False
@@ -62,7 +62,7 @@ def main() -> int:
     r = client.get("/")
     html = r.text
     check("首页可访问（200）", r.status_code == 200, str(r.status_code))
-    check("首页含中文标题", "竞赛 Agent 平台" in html)
+    check("首页含中文标题", "大学生竞赛工作台" in html)
     check("首页是自包含单文件（含内联样式与脚本）",
           "<style>" in html and "<script>" in html and "cdn" not in html.lower())
 

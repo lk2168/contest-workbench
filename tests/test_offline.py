@@ -21,9 +21,9 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from diansai_agent.config import Config                                    # noqa: E402
-from diansai_agent.tools import TOOL_SCHEMAS, call_tool                     # noqa: E402
-from diansai_agent.tools.shiti import kb_dirs, list_shiti                   # noqa: E402
+from contest_workbench.config import Config                                    # noqa: E402
+from contest_workbench.tools import TOOL_SCHEMAS, call_tool                     # noqa: E402
+from contest_workbench.tools.shiti import kb_dirs, list_shiti                   # noqa: E402
 
 PASS, FAIL, SKIP = [], [], []
 
@@ -31,7 +31,7 @@ PASS, FAIL, SKIP = [], [], []
 # 依赖题库的断言应当「跳过」而不是「失败」。本地建好题库后会自动变成严格断言。
 def _kb_ok() -> bool:
     try:
-        from diansai_agent.tools.shiti import list_shiti_structured
+        from contest_workbench.tools.shiti import list_shiti_structured
         return len(list_shiti_structured()) > 0
     except Exception:
         return False
@@ -73,7 +73,7 @@ def main() -> int:
                  "write_report", "analyze_step_data"):
         check(f"工具已注册：{want}", want in names)
 
-    from diansai_agent.domains import DOMAINS, get_domain, list_domains, prompt_text
+    from contest_workbench.domains import DOMAINS, get_domain, list_domains, prompt_text
     check("分区表里有 diansai 且标记为已实现", get_domain("diansai").implemented)
     check("分区清单能生成", "diansai" in list_domains() and "mathmodel" in list_domains())
     try:
@@ -104,7 +104,7 @@ def main() -> int:
     check("参数异常被兜住", isinstance(r, str))
 
     print("\n== 4. 报告落盘（写到临时目录，不污染 out/）==")
-    import diansai_agent.tools.report as report_mod
+    import contest_workbench.tools.report as report_mod
     with tempfile.TemporaryDirectory() as td:
         report_mod.OUT_DIR = Path(td)
         res = call_tool("write_report", {"filename": "自测报告.md", "content": "# 标题\n\n正文 **加粗**\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"})

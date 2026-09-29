@@ -28,7 +28,7 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 import numpy as np                                                    # noqa: E402
-from diansai_agent.tools.tuning import (analyze, parse_two_columns,    # noqa: E402
+from contest_workbench.tools.tuning import (analyze, parse_two_columns,    # noqa: E402
                                         suggest_pid)
 
 PASS, FAIL = [], []
@@ -134,7 +134,7 @@ def main() -> int:
         p = Path(td) / "step.csv"
         p.write_text("t,y\n" + "\n".join(f"{a:.4f},{b:.6f}" for a, b in zip(t[:3000], y[:3000])),
                      encoding="utf-8")
-        from diansai_agent.tools.tuning import read_data, plot
+        from contest_workbench.tools.tuning import read_data, plot
         t7, y7 = read_data(p)
         m7 = analyze(t7, y7, target=1.0)
         check("从文件读回并算出超调", m7.overshoot_pct is not None and 10 < m7.overshoot_pct < 25,
