@@ -1,0 +1,64 @@
+name: 许愿竞赛分区
+description: 希望这个平台支持另一个竞赛（数学建模 / 智能汽车 / 蓝桥杯 / 机器人大赛…）
+title: "[分区许愿] "
+labels: ["分区许愿"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本项目的架构就是为"**一套骨架服务多个竞赛**"设计的：新增一个分区只需要
+        **题库 + 提示词 + 一处登记**，不用改核心代码（见 [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md)）。
+        你只要把下面这些说清楚，就有人能照着做。
+  - type: input
+    id: name
+    attributes:
+      label: 竞赛全名
+      placeholder: 全国大学生数学建模竞赛
+    validations:
+      required: true
+  - type: textarea
+    id: content
+    attributes:
+      label: 这个竞赛考什么
+      description: 题目长什么样、最终交付物是什么（论文？实物？代码？答辩？）
+      placeholder: 给一个实际场景 + 数据，要求建模型、求解、写论文；交付物是一篇 PDF 论文
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: 有哪些**公开可获取**的资料
+      description: ★ 最关键的一项。请给链接（官网、历年题目、评分标准、优秀论文）
+      placeholder: |
+        - 官网：http://www.mcm.edu.cn/
+        - 历年题目：...
+        - 评分标准：...
+    validations:
+      required: true
+  - type: textarea
+    id: tools
+    attributes:
+      label: 你觉得需要什么专属工具
+      description: 参照"调参助手"那种"能算确定性指标"的工具，不要写"让它更智能"
+      placeholder: |
+        - 数据清洗与描述统计（缺失值、异常值）
+        - 拟合/回归/时间序列
+        - 论文结构与摘要生成
+    validations:
+      required: false
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么值得做（可选）
+      description: 参赛人数、你所在学校的情况、你自己会不会用
+    validations:
+      required: false
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: 你愿意帮忙吗
+      options:
+        - label: 我可以整理题库（本地，不提交版权内容）
+        - label: 我可以写提示词/报告模板
+        - label: 我可以帮忙测试
+        - label: 我只是提需求

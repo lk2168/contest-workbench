@@ -1,0 +1,86 @@
+name: 报 Bug
+description: 有东西坏了 / 跑不起来 / 结果不对
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量把信息填全 —— **"能复现的步骤"比"描述现象"有用十倍**。
+        ⚠️ 请勿粘贴 API Key；日志里若有 Key 请先删掉。
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 你期望的结果 vs 实际结果
+      placeholder: 我点了「开始分析」，期望出报告，但日志里出现 XXX 错误
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 http://127.0.0.1:8765
+        2. 年份选 2026-省赛，题目选 H 题
+        3. 点「开始分析」
+        4. 看到报错 ...
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: 报错原文 / 截图
+      description: 直接粘贴终端或浏览器控制台的完整报错，别只写"报错了"
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 运行 `python cli.py --version` 的输出
+      placeholder: diansai-agent 0.3.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows 10/11
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python 版本
+      description: 运行 `python -V`
+      placeholder: "3.13.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出问题的部分
+      options:
+        - 网页端（界面 / 接口）
+        - 命令行 cli.py
+        - 赛题分析（读题 / 报告）
+        - 调参助手（指标 / 曲线图 / PID 建议）
+        - 题库（找不到题 / 年份不对）
+        - 安装依赖 / 启动
+        - 其它
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已经跑过 `python tests/test_offline.py`（离线自测）
+          required: false
+        - label: 我确认没有粘贴任何 API Key
+          required: true

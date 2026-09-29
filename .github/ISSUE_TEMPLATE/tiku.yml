@@ -1,0 +1,54 @@
+name: 题库相关
+description: 找不到某道题 / 年份对不上 / 想提供题库来源
+title: "[题库] "
+labels: ["题库"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **请不要在这个 Issue 里上传赛题原文、赛区《答疑》、评分标准**（版权不属于我们，见 [NOTICE.md](../blob/main/NOTICE.md)）。
+        题库只放在各自本地 `data/题库/`。这里只讨论**来源链接**与**格式问题**。
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 属于哪种情况
+      options:
+        - 找不到某道题（题库里没有）
+        - 年份/批次不对，或同题号选错了年份
+        - 题面文字有乱码 / 排版错乱（PDF 抽取问题）
+        - 我想提供一批**公开可获取**的赛题来源
+        - 重建题库的脚本报错
+    validations:
+      required: true
+  - type: input
+    id: which
+    attributes:
+      label: 哪道题 / 哪个年份
+      placeholder: 2025-国赛 H 题（野生动物巡查系统）
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: 具体情况 + 公开来源链接
+      placeholder: |
+        我在官网找到 2025 年赛题页：https://...
+        直接下载会 403，需要在请求头里带 Referer
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: 你跑过哪些命令 / 报错原文（如涉及脚本）
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我提供的是**公开可获取**的来源链接，不是付费/内部资料
+          required: true
+        - label: 我没有在 Issue 里粘贴赛题原文
+          required: true

@@ -25,10 +25,26 @@ from diansai_agent.config import Config                                    # noq
 from diansai_agent.tools import TOOL_SCHEMAS, call_tool                     # noqa: E402
 from diansai_agent.tools.shiti import kb_dirs, list_shiti                   # noqa: E402
 
-PASS, FAIL = [], []
+PASS, FAIL, SKIP = [], [], []
+
+# 题库因版权不进仓库（见 NOTICE.md）→ 在没建题库的机器（比如 CI）上，
+# 依赖题库的断言应当「跳过」而不是「失败」。本地建好题库后会自动变成严格断言。
+def _kb_ok() -> bool:
+    try:
+        from diansai_agent.tools.shiti import list_shiti_structured
+        return len(list_shiti_structured()) > 0
+    except Exception:
+        return False
 
 
-def check(name: str, cond: bool, detail: str = "") -> None:
+KB_OK = _kb_ok()
+
+
+def check(name: str, cond: bool, detail: str = "", needs_kb: bool = False) -> None:
+    if needs_kb and not KB_OK:
+        SKIP.append(name)
+        print(f"⏭️  跳过（未建题库）：{name}")
+        return
     (PASS if cond else FAIL).append(name)
     print(f"{'✅' if cond else '❌'} {name}" + (f"  —— {detail}" if detail and not cond else ""))
 
@@ -42,11 +58,14 @@ def main() -> int:
 
     print("\n== 2. 题库 ==")
     dirs = kb_dirs()
-    check("至少有一个题库目录", len(dirs) > 0, str(dirs))
+    check("至少有一个题库目录", len(dirs) > 0 or not KB_OK, str(dirs), needs_kb=True)
     listing = list_shiti()
-    check("list_shiti 有内容", "题" in listing and len(listing) > 100)
+    check("list_shiti 有内容", "题" in listing and len(listing) > 100, needs_kb=True)
     n_years = listing.count("【")
-    check(f"覆盖多个年份/批次（{n_years} 个）", n_years >= 1)
+    check(f"覆盖多个年份/批次（{n_years} 个）", n_years >= 1, needs_kb=True)
+    if not KB_OK:
+        print("   （题库未建：先跑 `python scripts/fetch_history.py` 重建历年题库，"
+              "或用 `scripts/extract_shiti.py` 把 PDF 转成文本）")
 
     print("\n== 3. 工具与分区 ==")
     names = [t["function"]["name"] for t in TOOL_SCHEMAS]
@@ -67,7 +86,7 @@ def main() -> int:
     check("规划中分区的 tune 模板为 None", DOMAINS["mathmodel"].tune_template is None)
 
     r = call_tool("read_shiti", {"name": "H", "max_chars": 1500})
-    check("read_shiti 能读到正文", "错误" not in r[:8] and len(r) > 300, r[:80])
+    check("read_shiti 能读到正文", "错误" not in r[:8] and len(r) > 300, r[:80], needs_kb=True)
 
     r = call_tool("read_shiti", {"name": "不存在的题XYZ"})
     check("read_shiti 找不到时给友好错误", "没找到" in r)
@@ -95,7 +114,8 @@ def main() -> int:
         check("Word 转换（有 python-docx 时应成功）", "docx" in res or "失败" in res, res)
 
     print("\n" + "=" * 50)
-    print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
+    tail = f"，跳过 {len(SKIP)} 项（未建题库）" if SKIP else ""
+    print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项{tail}")
     if FAIL:
         print("失败项：" + "、".join(FAIL))
         return 1

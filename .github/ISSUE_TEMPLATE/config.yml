@@ -1,0 +1,13 @@
+# 空 Issue 也可以，但强烈建议用上面的模板（信息全 → 好处理）
+blank_issues_enabled: true
+
+contact_links:
+  - name: 使用问题 / 想法交流
+    url: https://github.com/lk2168/diansai-agent/discussions
+    about: 装不上、不会用、想聊怎么用 AI 打竞赛，来讨论区（比 Issue 更随意）
+  - name: 先读一遍贡献指南
+    url: https://github.com/lk2168/diansai-agent/blob/main/CONTRIBUTING.md
+    about: 不会写代码也能贡献：许愿分区、报 bug、提供题库线索、改文档
+  - name: 版权说明（重要）
+    url: https://github.com/lk2168/diansai-agent/blob/main/NOTICE.md
+    about: 赛题原文 / 赛区答疑 / 评分标准 不在开源范围内，请勿提交

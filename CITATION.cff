@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: "如果这个项目对你的竞赛备赛或学习有帮助，欢迎按下面的格式引用。"
+title: "diansai-agent：面向大学生竞赛的 AI Agent 平台（电赛分区）"
+abstract: >-
+  一个把竞赛赛题变成可执行方案的 Agent 平台。当前实现了电赛分区：
+  赛题分析（读题 / 查官方答疑 / 跨年份检索 → 出作战方案）与控制类调参助手
+  （阶跃响应指标 + 曲线图 + PID 调整建议，指标由本地算法计算并用解析解校验）。
+  架构上按"竞赛分区"组织，新增一个竞赛只需题库 + 提示词 + 一处登记，不用改核心代码。
+type: software
+authors:
+  - name: "lk2168"
+    website: "https://github.com/lk2168"
+repository-code: "https://github.com/lk2168/diansai-agent"
+url: "https://github.com/lk2168/diansai-agent"
+license: MIT
+version: "0.3.0"
+date-released: "2026-09-30"
+keywords:
+  - 全国大学生电子设计竞赛
+  - 电赛
+  - AI Agent
+  - LLM
+  - 竞赛备赛
+  - PID 调参
+  - 阶跃响应
+  - 大学生竞赛
+  - Python
+  - FastAPI
+preferred-citation:
+  type: software
+  title: "diansai-agent：面向大学生竞赛的 AI Agent 平台"
+  authors:
+    - name: "lk2168"
+  year: 2026
+  version: "0.3.0"
+  url: "https://github.com/lk2168/diansai-agent"
+notes: >-
+  赛题原文、赛区答疑与评分标准的著作权不属于本项目，不包含在本仓库中；
+  本项目的 MIT 许可覆盖自有的代码、提示词、文档与截图。详见仓库内 NOTICE.md。

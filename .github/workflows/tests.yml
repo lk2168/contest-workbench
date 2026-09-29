@@ -1,0 +1,50 @@
+name: 测试
+
+# 三套离线测试，全部不消耗 API、不需要 API Key、不需要题库
+# （题库因版权不进仓库，相关断言在没题库时自动「跳过」而不是失败，见各测试文件顶部）
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  python: "3.10" }   # 最低支持版本
+          - { os: ubuntu-latest,  python: "3.13" }
+          - { os: windows-latest, python: "3.13" }   # 主要目标平台
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 离线自测（工具链 / 分区 / 报告落盘）
+        run: python tests/test_offline.py
+
+      - name: 调参算法（对二阶系统解析解校验）
+        run: python tests/test_tuning.py
+
+      - name: 网页端（接口 / 上传调参 / 错误处理 / 路径安全）
+        run: python tests/test_web.py
+
+      - name: 命令行自检（不调用模型）
+        run: |
+          python cli.py --version
+          python cli.py --domains
+          python cli.py --check

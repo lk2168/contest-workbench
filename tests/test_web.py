@@ -24,10 +24,26 @@ from fastapi.testclient import TestClient                                  # noq
 from diansai_agent.web.app import app                                       # noqa: E402
 
 client = TestClient(app)
-PASS, FAIL = [], []
+PASS, FAIL, SKIP = [], [], []
 
 
-def check(name: str, cond: bool, detail: str = "") -> None:
+# 题库因版权不进仓库 → 没建题库的机器（CI）上，依赖题库的断言应「跳过」而非「失败」
+def _kb_ok() -> bool:
+    try:
+        from diansai_agent.tools.shiti import list_shiti_structured
+        return len(list_shiti_structured()) > 0
+    except Exception:
+        return False
+
+
+KB_OK = _kb_ok()
+
+
+def check(name: str, cond: bool, detail: str = "", needs_kb: bool = False) -> None:
+    if needs_kb and not KB_OK:
+        SKIP.append(name)
+        print(f"⏭️  跳过（未建题库）：{name}")
+        return
     (PASS if cond else FAIL).append(name)
     print(f"{'✅' if cond else '❌'} {name}" + (f"  —— {detail}" if detail and not cond else ""))
 
@@ -82,26 +98,32 @@ def main() -> int:
     check("规划中分区没有调参能力（页签不会出现）", "tune" not in caps.get("mathmodel", []), str(caps))
     check("所有分区都有赛题分析能力", all("analyze" in v for v in caps.values()))
     s = client.get("/api/shiti?domain=diansai").json()
-    check("题库能列出", "题" in s.get("text", "") and len(s["text"]) > 100)
+    check("题库能列出", "题" in s.get("text", "") and len(s["text"]) > 100, needs_kb=True)
     bad = client.get("/api/shiti?domain=不存在的分区")
     check("未知分区返回 400", bad.status_code == 400, str(bad.status_code))
 
     print("\n== 2b. 结构化题目清单（年份/批次 + 题号，解决年份歧义）==")
     lst = client.get("/api/shiti-list").json()
     items, years = lst["items"], lst["years"]
-    check("清单非空", len(items) >= 30, f"{len(items)} 条")
-    check("覆盖 5 个年份/批次", len(years) >= 5, str(years))
+    check("清单非空", len(items) >= 30, f"{len(items)} 条", needs_kb=True)
+    check("覆盖 5 个年份/批次", len(years) >= 5, str(years), needs_kb=True)
     check("每条含 year/code/title/file/label",
           all(all(k in it for k in ("year", "code", "title", "file", "label")) for it in items))
     h_items = [it for it in items if it["code"] == "H"]
-    check("同题号跨年份（H 题有多个年份）", len(h_items) >= 3, f"{len(h_items)} 个 H 题")
+    check("同题号跨年份（H 题有多个年份）", len(h_items) >= 3, f"{len(h_items)} 个 H 题", needs_kb=True)
     check("同题号文件名互不相同（可用 file 唯一定位）",
           len({it["file"] for it in h_items}) == len(h_items))
-
-    target = next(it for it in items if it["code"] == "H")
-    det = client.get(f"/api/shiti-detail?file={target['file']}").json()
-    check("按 file 能读到题面", len(det.get("text", "")) > 300 and "错误" not in det["text"][:8])
-    check("题面返回元信息（年份/题号）", (det.get("meta") or {}).get("year") == target["year"])
+    if not KB_OK:
+        print("   （题库未建，跳过与题面内容相关的检查；先跑 scripts/fetch_history.py）")
+    # ★ 不能用 next(...) 直接取：题库为空时会抛 StopIteration 让整套测试崩掉
+    target = h_items[0] if h_items else None
+    if target:
+        det = client.get(f"/api/shiti-detail?file={target['file']}").json()
+        check("按 file 能读到题面", len(det.get("text", "")) > 300 and "错误" not in det["text"][:8])
+        check("题面返回元信息（年份/题号）", (det.get("meta") or {}).get("year") == target["year"])
+    else:
+        check("按 file 能读到题面", False, needs_kb=True)
+        check("题面返回元信息（年份/题号）", False, needs_kb=True)
     check("读不存在的题 → 404", client.get("/api/shiti-detail?file=不存在.md").status_code == 404)
 
     print("\n== 3. 调参接口（上传示例数据，不调模型）==")
@@ -139,17 +161,20 @@ def main() -> int:
     check("报告列表可用（items 是列表）", isinstance(r.get("items"), list))
 
     print("\n== 6. 分析接口（演示模式，不调模型）==")
+    # 演示模式只需要 file/label —— 没题库时用占位值，接口本身仍应正常返回 SSE
+    fake = target or {"file": "A题_示例.md", "label": "示例-省赛 · A 题 · 示例", "year": "示例-省赛"}
     with client.stream("POST", "/api/analyze",
-                       json={"domain": "diansai", "file": target["file"],
-                             "label": target["label"], "use_llm": False}) as resp:
+                       json={"domain": "diansai", "file": fake["file"],
+                             "label": fake["label"], "use_llm": False}) as resp:
         body = "".join(chunk for chunk in resp.iter_text())
     check("SSE 返回 200", resp.status_code == 200, str(resp.status_code))
     check("SSE 里有提示词事件", '"kind": "prompt"' in body or '"kind":"prompt"' in body)
-    check("任务里带上了年份/批次（不会分析错年份）", target["year"] in body, target["year"])
-    check("提示词要求用 file 精确定位", "read_shiti" in body and target["file"] in body)
+    check("任务里带上了年份/批次（不会分析错年份）", fake["year"] in body, fake["year"], needs_kb=True)
+    check("提示词要求用 file 精确定位", "read_shiti" in body and fake["file"] in body)
 
     print("\n" + "=" * 52)
-    print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
+    tail = f"，跳过 {len(SKIP)} 项（未建题库）" if SKIP else ""
+    print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项{tail}")
     if FAIL:
         print("失败项：" + "、".join(FAIL))
         return 1

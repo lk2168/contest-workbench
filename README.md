@@ -4,10 +4,11 @@
 > 这不是"调一次 API 问一句"，而是一个**真正的 Agent**：它自己决定下一步查什么资料、调哪个工具，直到把报告写完。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![测试](https://github.com/lk2168/diansai-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/lk2168/diansai-agent/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![离线测试](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E6%B5%8B%E8%AF%95-95%20%E9%A1%B9-brightgreen)
 ![status](https://img.shields.io/badge/status-v0.3-orange)
 ![web](https://img.shields.io/badge/%E7%BD%91%E9%A1%B5%E7%AB%AF-%E5%BC%80%E7%AE%B1%E5%8D%B3%E7%94%A8-blue)
-![tests](https://img.shields.io/badge/tests-67%20passed-brightgreen)
 ![domains](https://img.shields.io/badge/domains-%E7%94%B5%E8%B5%9B(%E5%B7%B2%E5%AE%9E%E7%8E%B0)%20%2B%203%20%E4%B8%AA%E8%A7%84%E5%88%92%E4%B8%AD-green)
 
 > **一个面向大学生竞赛的 Agent 平台。** 目前实现了 **电赛** 分区（赛题分析 + 控制类调参），
@@ -336,3 +337,28 @@ diansai-agent/
 ---
 
 _当前版本 v0.3（网页端）：赛题分析 + 控制类调参 + 竞赛分区平台。下一步见上方 Roadmap。_
+
+## 参与贡献
+
+**不会写代码也能帮上忙** —— 许愿竞赛分区、报 bug、提供题库来源线索、改文档都算贡献。
+完整说明见 [CONTRIBUTING.md](CONTRIBUTING.md)，讨论区在 [Discussions](https://github.com/lk2168/diansai-agent/discussions)。
+
+- 许愿一个新竞赛（数学建模 / 智能汽车 / 蓝桥杯…）→ [分区许愿](https://github.com/lk2168/diansai-agent/issues/new?template=feature_request.yml)
+- 有东西坏了 → [报 Bug](https://github.com/lk2168/diansai-agent/issues/new?template=bug_report.yml)
+- 题库找不到题 / 年份不对 → [题库反馈](https://github.com/lk2168/diansai-agent/issues/new?template=tiku.yml)
+
+> ⚠️ 提 Issue / PR 时请勿粘贴 API Key，也**不要上传赛题原文、赛区《答疑》、评分标准**（版权不属于我们，见 [NOTICE.md](NOTICE.md)）。
+
+## 引用
+
+如果这个项目对你的竞赛备赛或学习有帮助，可以这样引用（也见 [CITATION.cff](CITATION.cff)）：
+
+```bibtex
+@software{diansai_agent,
+  title  = {diansai-agent：面向大学生竞赛的 AI Agent 平台},
+  author = {lk2168},
+  year   = {2026},
+  url    = {https://github.com/lk2168/diansai-agent},
+  note   = {MIT 许可；赛题原文与评分标准不在开源范围内}
+}
+```
