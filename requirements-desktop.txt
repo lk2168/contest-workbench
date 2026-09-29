@@ -1,0 +1,12 @@
+# 桌面窗口（可选）
+#
+# 让 exe 打开的是**自己的原生窗口**（而不是浏览器）：用系统自带的 WebView2 渲染，
+# 界面代码一行都不用改。只需在打包前装上它：
+#
+#     pip install -r requirements-desktop.txt
+#     python scripts/build_exe.py
+#
+# 不装也能用：程序会自动回退成"打开默认浏览器"。
+# Windows 11 自带 WebView2 运行时；老系统可能需要单独装
+# WebView2 Runtime（微软免费提供）。
+pywebview>=5.0

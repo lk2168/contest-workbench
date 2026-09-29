@@ -43,11 +43,16 @@ Agent 每一步在做什么都显示出来；关键指标由本地算法计算�
 **方式一：直接下载 exe（给不想碰命令行的同学）**
 
 到 [**Releases**](https://github.com/lk2168/contest-workbench/releases/latest) 下载 `contest-workbench.exe`，双击即可。
-不需要装 Python；第一次用点右上角「设置」把 DeepSeek API Key 填进去（存在用户目录，不上传）。
+它会打开**自己的桌面窗口**（不是浏览器；用的是 Windows 自带的 WebView2，界面代码一行没改），
+**不需要装 Python**；第一次用点右上角「设置」把 DeepSeek API Key 填进去（存在用户目录，不上传）。
+想用浏览器打开：`contest-workbench.exe --browser`；只起服务（局域网共享）：`--server-only`。
 Exe 同目录下放 `data/题库/<分区>/` 就能读到自己的题库。
 
 > 想自己打包：`pip install pyinstaller && python scripts/build_exe.py` → `dist/contest-workbench.exe`（约 46 MB）。
 > ⚠️ 冷启动要解包 46 MB，约 5–10 秒，属正常。
+
+> 想要原生窗口：`pip install -r requirements-desktop.txt`（pywebview，Win11 自带 WebView2 运行时）。
+> 没装也能跑，会自动回退成打开浏览器。
 
 **方式二：从源码跑（开发 / 想改代码）**
 
@@ -74,10 +79,12 @@ python scripts/make_sample_step.py                        # 先生成一份示�
 python cli.py tune samples/step-response-sample.csv --target 1.0            # 含模型诊断
 python cli.py tune samples/step-response-sample.csv --target 1.0 --no-llm   # 只本地算（0 成本）
 
-# 6) 测试：三套共 95 项，全部离线、不需要 API Key（CI 也会自动跑）
+# 6) 测试：五套共 128 项，全部离线、不需要 API Key（CI 也会自动跑）
 python tests/test_offline.py    # 27 项：工具链 + 分区 + 报告落盘
 python tests/test_tuning.py     # 20 项：调参算法（对二阶系统解析解校验）
-python tests/test_web.py        # 48 项：网页接口 + 上传调参 + 错误处理 + 路径安全
+python tests/test_web.py        # 70 项：网页接口 + 上传调参 + 错误处理 + 路径安全
+python tests/test_frontend_runtime.py  #  6 项：无头浏览器真跑首页 JS（抓前端运行时错误）
+python tests/test_launcher.py          #  5 项：端口避让 / 日志兜底 / 窗口能力探测
 ```
 
 > 没建题库也能跑：依赖题库的断言会自动**跳过**（题库因版权不进仓库，见 [NOTICE.md](NOTICE.md)）。

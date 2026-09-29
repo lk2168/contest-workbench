@@ -616,8 +616,10 @@ const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok)throw new Error((await 
 (async function init(){
   try{
     const h=await(await api("/api/health")).json();
-    $("modelName").textContent=h.model;
-    $("keySource").textContent=h.key_source+(h.has_key?"":"（未配置）");
+    // ★ 不要再写 $("modelName") / $("keySource")：设置抽屉改版时它们已被删除，
+    //   引用会抛 "Cannot set properties of null"，让整个 init 中断
+    //   （症状：首页统计条与分区卡都不渲染，只显示一条"加载失败"）。
+    //   模型与 Key 来源现在由 loadSettings() 填（#modelSel / #keyStatus / #paths）。
     const d=await(await api("/api/domains")).json();
     state.domains=d.domains;
     const avail=d.domains.filter(x=>x.implemented), soon=d.domains.filter(x=>!x.implemented);

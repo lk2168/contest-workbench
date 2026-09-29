@@ -43,6 +43,15 @@ jobs:
       - name: 网页端（接口 / 上传调参 / 错误处理 / 路径安全）
         run: python tests/test_web.py
 
+      # 用无头浏览器真跑一遍首页 JS：抓"元素不存在让 init 中断"这类只在前端运行时暴露的 bug
+      # （v0.5.0 的 exe 就是栽在这上面）。没有浏览器的环境会自动跳过，不算失败；
+      # windows runner 自带 Edge，所以这一步在 CI 里会真的执行。
+      - name: 前端运行时（无头浏览器渲染首页）
+        run: python tests/test_frontend_runtime.py
+
+      - name: 启动器（端口避让 / 日志兜底 / 窗口能力探测）
+        run: python tests/test_launcher.py
+
       - name: 命令行空跑（不调用模型）
         run: |
           python cli.py --version

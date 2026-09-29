@@ -49,7 +49,16 @@ HIDDEN = [
     "uvicorn.lifespan", "uvicorn.lifespan.on",
     "contest_workbench.tools.md2docx",   # 报告转换器（惰性 import，显式声明更稳）
     "docx",                          # python-docx
+    # 原生窗口（pywebview + WebView2）：它按平台动态挑后端，也要显式声明
+    "webview", "webview.platforms.edgechromium", "clr", "pythonnet",
 ]
+
+# 装了 pywebview 就打"原生窗口版"（无控制台，界面是自己的窗口）
+try:
+    import webview  # noqa: F401
+    HAS_WEBVIEW = True
+except Exception:
+    HAS_WEBVIEW = False
 
 
 def main() -> int:
@@ -57,6 +66,8 @@ def main() -> int:
     ap.add_argument("--clean", action="store_true", help="构建前清掉 build/ 与 dist/")
     ap.add_argument("--name", default="contest-workbench", help="产物名，默认 contest-workbench")
     ap.add_argument("--onedir", action="store_true", help="打成目录（启动快，但不是一个文件）")
+    ap.add_argument("--console", action="store_true",
+                    help="保留黑色控制台窗口（默认隐藏；排障时可加这个）")
     args = ap.parse_args()
 
     try:
@@ -78,8 +89,9 @@ def main() -> int:
         "--noconfirm", "--clean",
         "--onedir" if args.onedir else "--onefile",
         "--name", args.name,
-        # 打包后不需要控制台？留着：出问题时用户能看到提示，且我们要打印访问地址
-        "--console",
+        # 默认隐藏黑色控制台：装了 pywebview 时界面是自己的原生窗口，弹个 cmd 窗口很掉价。
+        # 排障用 `--console` 再加回来；日志照样写在 ~/.contest-workbench/launcher.log。
+        "--console" if (args.console or not HAS_WEBVIEW) else "--windowed",
     ]
     for src, dst in DATA:
         cmd += ["--add-data", f"{src}{SEP}{dst}"]
@@ -87,7 +99,9 @@ def main() -> int:
         cmd += ["--hidden-import", h]
     cmd += ["launcher.py"]
 
-    print("执行：", " ".join(cmd[:8]), "…")
+    print(f"执行：{' '.join(cmd[:8])} …")
+    print(f"模式：{'原生窗口（pywebview 已装）' if HAS_WEBVIEW else '浏览器（没装 pywebview）'}"
+          f" · 控制台：{'保留' if (args.console or not HAS_WEBVIEW) else '隐藏'}")
     r = subprocess.run(cmd, cwd=ROOT)
     if r.returncode != 0:
         print("❌ 打包失败，看上面的报错")
@@ -97,7 +111,8 @@ def main() -> int:
     if out.exists():
         print("\n✅ 打包完成：" + str(out))
         print(f"   大小：{out.stat().st_size / 1024 / 1024:.1f} MB")
-        print("   双击即可运行（会自动打开浏览器）；不需要用户装 Python。")
+        print("   双击即可运行（不需要用户装 Python）："
+              + ("会打开自己的桌面窗口" if HAS_WEBVIEW else "会在浏览器里打开"))
         print("   提示：把题库放在 exe 同目录的 data/题库/<分区>/ 下即可被读到。")
     else:
         print("⚠️ 打包命令成功但没找到产物，检查 dist/ 目录")
