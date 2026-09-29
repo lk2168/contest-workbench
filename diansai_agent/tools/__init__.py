@@ -31,7 +31,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "list_shiti",
-            "description": "列出本地真题库里的所有赛题（题号、标题、文件）。开始分析前先调用它，确认题号对应哪道题。",
+            "description": "列出本地题库里的所有赛题（年份/批次、题号、标题、文件名）。开始分析前先调用它，确认要分析的是哪一年哪道题（多个年份可能有同题号）。",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -39,14 +39,15 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read_shiti",
-            "description": "读取某道赛题的正文（已做过 PDF 排版清洗）。参数 name 可以是题号（如 H）或文件名片段。",
+            "description": "读取某道赛题的正文（已做 PDF 排版清洗）。题库里多个年份可能有同题号（如 2021/2023/2025 都有 H 题），所以要精确定位时请用 file 参数（由 list_shiti 给出）。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "题号或文件名片段，例如 'H' 或 '滚球'"},
+                    "file": {"type": "string", "description": "精确的文件名/文件名去扩展名（推荐，避免年份歧义）"},
                     "max_chars": {"type": "integer", "description": "最多返回多少字符，默认 8000"},
                 },
-                "required": ["name"],
+                "required": [],
             },
         },
     },

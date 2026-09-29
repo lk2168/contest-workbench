@@ -104,17 +104,47 @@ def list_shiti() -> str:
     if not files:
         return f"[错误] 题库为空。已查找：{', '.join(str(d) for d in kb_dirs())}"
     groups: dict[str, list[str]] = {}
-    for p in files:
-        year = p.parent.name
-        m = re.match(r"([A-Za-z])\s*题", p.stem)
-        code = m.group(1).upper() if m else "?"
-        title = re.sub(r"^[A-Za-z]\s*题[_ ]*", "", p.stem).replace("_", " ")
-        groups.setdefault(year, []).append(f"  {code} 题 | {title} | {p.stat().st_size} 字节")
+    for item in list_shiti_structured():
+        groups.setdefault(item["year"], []).append(
+            f"  {item['code']} 题 | {item['title']} | {item['chars']} 字符")
     lines = [f"题库（共 {len(files)} 道题，来自 {len(groups)} 个年份/批次）："]
     for year in sorted(groups, reverse=True):
         lines.append(f"\n【{year}】")
         lines += groups[year]
     return "\n".join(lines)
+
+
+def list_shiti_structured() -> list[dict]:
+    """结构化题目清单（给网页端做"年份+题目"两级选择用）。
+
+    为什么需要：题库里 2021/2023/2024/2025/2026 **都有 H 题**，
+    只按题号找会有歧义 —— 必须带上「年份/批次」和文件名才能唯一定位。
+    """
+    items = []
+    for p in _all_md():
+        m = re.match(r"([A-Za-z])\s*题?[_．.\s]?", p.stem)
+        code = (m.group(1).upper() if m else "?")
+        title = re.sub(r"^[A-Za-z]\s*题?[_．.\s]*", "", p.stem).replace("_", " ").strip()
+        items.append({
+            "year": p.parent.name,
+            "code": code,
+            "title": title,
+            "file": p.stem,          # 唯一定位用（去重后的口径与 _all_md 一致）
+            "chars": p.stat().st_size,
+            "label": f"{p.parent.name} · {code} 题 · {title}",
+        })
+    items.sort(key=lambda x: (x["year"], x["code"]), reverse=True)
+    return items
+
+
+def _find_exact(file_or_stem: str) -> Path | None:
+    """按文件名/文件名去扩展名精确查找（网页端传的就是它，避免歧义）。"""
+    key = Path(file_or_stem or "").name
+    key_ns = key[:-3] if key.lower().endswith(".md") else key
+    for p in _all_md():
+        if p.name == key or p.stem == key_ns:
+            return p
+    return None
 
 
 def _find(name: str) -> Path | None:
@@ -134,11 +164,19 @@ def _find(name: str) -> Path | None:
     return None
 
 
-def read_shiti(name: str, max_chars: int = 8000) -> str:
-    """读取某道赛题正文（多来源命中时，提示还有别的年份同名题）。"""
-    p = _find(name)
+def read_shiti(name: str = "", max_chars: int = 8000, file: str = "") -> str:
+    """读取某道赛题正文。
+
+    优先用 `file`（网页端传来的精确文件名，能唯一定位年份）；否则按 `name`（题号或关键词）找，
+    并在多命中时提示其它年份的同题号题目。
+    """
+    p = _find_exact(file) if file else None
     if p is None:
-        return f"[错误] 题库里没找到「{name}」。先 list_shiti 看看有什么。"
+        p = _find(name)
+    if p is None:
+        which = file or name
+        return (f"[错误] 题库里没找到「{which}」。先 list_shiti 看看有什么；"
+                f"若有多个年份同题号，请用 file 参数精确指定（如 '2025-国赛/H题_野生动物巡查系统'）。")
     text = p.read_text(encoding="utf-8")
     total = len(text)
     if total > max_chars:

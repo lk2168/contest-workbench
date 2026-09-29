@@ -50,6 +50,11 @@
   .log .ev-answer{color:#f9a8d4}
   .log .ev-error{color:#fca5a5}
   .log .ev-log{color:#cbd5e1}
+  .preview{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+           max-height:210px;overflow:auto;white-space:pre-wrap;font-size:13px;color:#333;
+           font-family:var(--mono);margin:4px 0 10px}
+  .preview.expanded{max-height:70vh}
+  .preview .pmeta{font-family:inherit;color:var(--brand);font-weight:600;margin-bottom:6px}
   .out{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px}
   .out img{max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff}
   table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
@@ -89,19 +94,21 @@
       <p class="hint">选分区、填题号（如 <code>H</code> 或 <code>滚球</code>）。Agent 会自己读题、查官方答疑、翻历年同类题，最后写出方案报告。</p>
       <div class="row">
         <label>竞赛分区</label><select id="domain"></select>
-        <label>题号/关键词</label><input type="text" id="shiti" value="H" />
-        <label>最多步数</label><input type="number" id="steps" value="12" min="2" max="30" style="min-width:70px" />
+        <label>年份/批次</label><select id="year" style="min-width:150px"></select>
       </div>
       <div class="row">
-        <button id="goAnalyze">开始分析</button>
+        <label>题目</label><select id="shitiSel" style="flex:1;min-width:300px"></select>
+        <label title="Agent 最多跑多少步（越大越久，也越贵）">最多步数</label>
+        <input type="number" id="steps" value="12" min="2" max="30" style="min-width:70px;width:80px" />
+      </div>
+      <div class="preview" id="preview">（选好题目后，这里显示题面预览）</div>
+      <div class="row">
+        <button id="goAnalyze">开始分析这题</button>
         <button class="ghost" id="goDemo">只看提示词（0 成本）</button>
+        <button class="ghost" id="goFull">展开题面全文</button>
         <span class="status" id="analyzeStatus"></span>
       </div>
-      <div class="log" id="log">（点「开始分析」后，Agent 的每一步会实时显示在这里）</div>
-      <details id="shitiBox">
-        <summary>查看当前分区的题库</summary>
-        <pre id="shitiText">加载中…</pre>
-      </details>
+      <div class="log" id="log">（点「开始分析这题」后，Agent 的每一步会实时显示在这里）</div>
       <div class="out" id="analyzeOut"></div>
     </section>
 
@@ -195,17 +202,45 @@ const api=async(u,o)=>{const r=await fetch(u,o); if(!r.ok){const t=await r.text(
     ].join("");
     const d=await (await api("/api/domains")).json();
     $("domain").innerHTML=d.domains.map(x=>`<option value="${x.id}" ${x.implemented?"":"disabled"}>${x.name}${x.implemented?"":"（规划中）"}</option>`).join("");
-    loadShiti(); loadFiles();
+    await loadShitiList(); loadFiles();
   }catch(e){ $("ptag").textContent="加载失败："+e.message; }
 })();
 
-async function loadShiti(){
+// ───────────────────────── 题库：年份/批次 → 题目（两级选择 + 题面预览）─────────────────────────
+let SHITI=[], CUR=null;
+async function loadShitiList(){
   const dom=$("domain").value;
-  $("shitiText").textContent="加载中…";
-  try{ const r=await (await api("/api/shiti?domain="+encodeURIComponent(dom))).json();
-       $("shitiText").textContent=r.text; }catch(e){ $("shitiText").textContent="题库加载失败："+e.message; }
+  $("preview").innerHTML="（正在读取题库…）";
+  try{
+    const d=await (await api("/api/shiti-list?domain="+encodeURIComponent(dom))).json();
+    SHITI=d.items||[];
+    $("year").innerHTML='<option value="">全部年份/批次</option>'+
+      (d.years||[]).map(y=>`<option value="${y}">${y}</option>`).join("");
+    $("year").value=(d.years||[])[0]||"";      // 默认选最新一批
+    fillShitiSelect();
+  }catch(e){ $("preview").textContent="题库加载失败："+e.message; }
 }
-$("domain").addEventListener("change",loadShiti);
+function fillShitiSelect(){
+  const y=$("year").value;
+  const list=SHITI.filter(x=>!y||x.year===y);
+  $("shitiSel").innerHTML=list.map(x=>`<option value="${esc(x.file)}">${esc(x.code)} 题 · ${esc(x.title)}</option>`).join("")
+    || '<option value="">（该批次没有题目）</option>';
+  loadPreview();
+}
+async function loadPreview(expand){
+  const file=$("shitiSel").value;
+  CUR=SHITI.find(x=>x.file===file)||null;
+  if(!file||!CUR){ $("preview").textContent="（没有可预览的题目）"; return; }
+  $("preview").innerHTML='<div class="pmeta">'+esc(CUR.label)+'</div>(正在读取题面…)';
+  try{
+    const d=await (await api(`/api/shiti-detail?file=${encodeURIComponent(file)}&max_chars=${expand?200000:1800}`)).json();
+    $("preview").innerHTML='<div class="pmeta">'+esc(CUR.label)+'　<span style="color:#57606a;font-weight:400">共 '+CUR.chars+' 字符'+(expand?"（已展开全文）":"（预览前 1800 字，可点「展开题面全文」）")+'</span></div>'+esc(d.text);
+    $("preview").classList.toggle("expanded",!!expand);
+  }catch(e){ $("preview").textContent="题面读取失败："+e.message; }
+}
+$("year").addEventListener("change",fillShitiSelect);
+$("shitiSel").addEventListener("change",()=>loadPreview(false));
+$("goFull").onclick=()=>loadPreview(true);
 
 // ───────────────────────── ① 赛题分析（SSE 实时进度）─────────────────────────
 function push(kind,text){
@@ -214,10 +249,12 @@ function push(kind,text){
 }
 async function runAnalyze(useLLM){
   const btn=$("goAnalyze"); btn.disabled=true; $("log").textContent=""; $("analyzeOut").innerHTML="";
-  $("analyzeStatus").textContent="运行中…";
+  if(!CUR){ $("analyzeStatus").textContent="请先选一道题"; btn.disabled=false; return; }
+  $("analyzeStatus").textContent="运行中（"+CUR.label+"）…";
   try{
     const resp=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({domain:$("domain").value,name:$("shiti").value,steps:+$("steps").value,use_llm:useLLM})});
+      body:JSON.stringify({domain:$("domain").value,file:CUR.file,label:CUR.label,
+                           steps:+$("steps").value,use_llm:useLLM})});
     if(!resp.ok) throw new Error(await resp.text());
     const reader=resp.body.getReader(), dec=new TextDecoder(); let buf="";
     while(true){
@@ -249,6 +286,7 @@ async function runAnalyze(useLLM){
 }
 $("goAnalyze").onclick=()=>runAnalyze(true);
 $("goDemo").onclick=()=>runAnalyze(false);
+$("domain").addEventListener("change",loadShitiList);
 
 // ───────────────────────── ② 调参助手 ─────────────────────────
 $("goSample").onclick=async()=>{

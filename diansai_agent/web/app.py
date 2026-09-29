@@ -25,7 +25,7 @@ from ..domains import DOMAINS, get_domain, list_domains, prompt_text
 from ..llm import LLM
 from ..loop import Agent
 from ..tools import ERROR_PREFIX, TOOL_SCHEMAS, call_tool, is_error
-from ..tools.shiti import list_shiti
+from ..tools.shiti import list_shiti, list_shiti_structured
 
 # ── 平台自我介绍（也是首页"这个项目是什么"的事实来源，改这里就够）───────────
 PLATFORM = {
@@ -110,17 +110,50 @@ def api_shiti(domain: str = "diansai") -> JSONResponse:
     return JSONResponse({"text": list_shiti()})
 
 
+@app.get("/api/shiti-list")
+def api_shiti_list(domain: str = "diansai") -> JSONResponse:
+    """结构化题目清单：年份/批次 + 题号 + 题名 + 文件名（网页端两级选择用）。"""
+    import os
+    os.environ["DIANSAI_DOMAIN"] = domain
+    _domain_or_400(domain)
+    items = list_shiti_structured()
+    years = sorted({x["year"] for x in items}, reverse=True)
+    return JSONResponse({"items": items, "years": years, "count": len(items)})
+
+
+@app.get("/api/shiti-detail")
+def api_shiti_detail(file: str, domain: str = "diansai", max_chars: int = 12000) -> JSONResponse:
+    """读某一道题的正文（用 file 精确定位，避免年份歧义）。"""
+    import os
+    os.environ["DIANSAI_DOMAIN"] = domain
+    _domain_or_400(domain)
+    text = call_tool("read_shiti", {"file": file, "max_chars": max_chars})
+    if is_error(text):
+        raise HTTPException(status_code=404, detail=text.replace(ERROR_PREFIX, "").strip())
+    meta = next((x for x in list_shiti_structured() if x["file"] == file), None)
+    return JSONResponse({"text": text, "meta": meta})
+
+
 @app.post("/api/analyze")
 def api_analyze(payload: dict) -> StreamingResponse:
-    """分析赛题：SSE 流式返回 Agent 的每一步。"""
+    """分析赛题：SSE 流式返回 Agent 的每一步。
+
+    定位方式：优先 `file`（网页端两级选择给出的精确文件名，能确定年份），
+    否则退回 `name`（题号或关键词，会提示年份歧义）。
+    """
     domain = (payload or {}).get("domain", "diansai")
+    file = ((payload or {}).get("file") or "").strip()
     name = ((payload or {}).get("name") or "").strip()
+    label = ((payload or {}).get("label") or "").strip()
     use_llm = bool((payload or {}).get("use_llm", True))
     steps = int((payload or {}).get("steps", 12))
     d = _domain_or_400(domain)
     cfg = Config()
-    if not name:
-        raise HTTPException(status_code=400, detail="请填题号或题目关键词")
+    if not file and not name:
+        raise HTTPException(status_code=400, detail="请选择一道题（或填题号/关键词）")
+
+    # 目标描述：带上年份/批次，报告与提示词里都不会再有歧义
+    target_desc = label or (f"{file}" if file else f"题号/关键词「{name}」")
 
     def gen():
         def send(obj):
@@ -130,7 +163,7 @@ def api_analyze(payload: dict) -> StreamingResponse:
             why = "演示模式（未调用模型）" if use_llm is False else "未找到 API Key"
             yield send({"kind": "log", "text": f"⚠️ {why}：本次只展示将要发给模型的提示词。"})
             system = prompt_text(d, "system")
-            task = prompt_text(d, "analyze") + f"\n\n【本次任务】分析「{name}」这道题。"
+            task = _build_task(d, target_desc, file, name)
             yield send({"kind": "prompt", "system": system, "task": task})
             yield send({"kind": "done", "answer": ""})
             return
@@ -141,7 +174,7 @@ def api_analyze(payload: dict) -> StreamingResponse:
             try:
                 agent = Agent(LLM(cfg), prompt_text(d, "system"), max_steps=steps,
                               verbose=False, on_event=q.put)
-                answer = agent.run(prompt_text(d, "analyze") + f"\n\n【本次任务】分析「{name}」这道题。")
+                answer = agent.run(_build_task(d, target_desc, file, name))
                 q.put({"kind": "usage", **agent.usage_total})
                 q.put({"kind": "done", "answer": answer})
             except Exception as e:               # 任何异常都要让前端看到，不能静默
@@ -157,6 +190,20 @@ def api_analyze(payload: dict) -> StreamingResponse:
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _build_task(d, target_desc: str, file: str, name: str) -> str:
+    """拼出交给模型的任务描述（把年份/文件名说清楚，避免分析错年份）。"""
+    lines = [prompt_text(d, "analyze"),
+             f"\n\n【本次任务】分析这道题：**{target_desc}**"]
+    if file:
+        lines.append(f"\n读题时请用 `read_shiti(file=\"{file}\")` 精确读取，"
+                     f"**不要**只按题号读（题库里多个年份有同题号，会读错年份）。")
+    elif name:
+        lines.append(f"\n读题时用 `read_shiti(name=\"{name}\")`；"
+                     f"若它提示存在多个年份的同题号，请先向用户确认要哪一年。")
+    lines.append("\n报告文件名请带上年份/批次，例如 `2025-国赛-H题-分析报告.md`。")
+    return "".join(lines)
 
 
 @app.post("/api/tune")

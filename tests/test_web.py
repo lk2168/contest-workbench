@@ -54,6 +54,24 @@ def main() -> int:
     bad = client.get("/api/shiti?domain=不存在的分区")
     check("未知分区返回 400", bad.status_code == 400, str(bad.status_code))
 
+    print("\n== 2b. 结构化题目清单（年份/批次 + 题号，解决年份歧义）==")
+    lst = client.get("/api/shiti-list").json()
+    items, years = lst["items"], lst["years"]
+    check("清单非空", len(items) >= 30, f"{len(items)} 条")
+    check("覆盖 5 个年份/批次", len(years) >= 5, str(years))
+    check("每条含 year/code/title/file/label",
+          all(all(k in it for k in ("year", "code", "title", "file", "label")) for it in items))
+    h_items = [it for it in items if it["code"] == "H"]
+    check("同题号跨年份（H 题有多个年份）", len(h_items) >= 3, f"{len(h_items)} 个 H 题")
+    check("同题号文件名互不相同（可用 file 唯一定位）",
+          len({it["file"] for it in h_items}) == len(h_items))
+
+    target = next(it for it in items if it["code"] == "H")
+    det = client.get(f"/api/shiti-detail?file={target['file']}").json()
+    check("按 file 能读到题面", len(det.get("text", "")) > 300 and "错误" not in det["text"][:8])
+    check("题面返回元信息（年份/题号）", (det.get("meta") or {}).get("year") == target["year"])
+    check("读不存在的题 → 404", client.get("/api/shiti-detail?file=不存在.md").status_code == 404)
+
     print("\n== 3. 调参接口（上传示例数据，不调模型）==")
     sample = ROOT / "samples" / "step-response-sample.csv"
     if not sample.exists():
@@ -87,6 +105,16 @@ def main() -> int:
     print("\n== 5. 报告列表 ==")
     r = client.get("/api/reports").json()
     check("报告列表可用（items 是列表）", isinstance(r.get("items"), list))
+
+    print("\n== 6. 分析接口（演示模式，不调模型）==")
+    with client.stream("POST", "/api/analyze",
+                       json={"domain": "diansai", "file": target["file"],
+                             "label": target["label"], "use_llm": False}) as resp:
+        body = "".join(chunk for chunk in resp.iter_text())
+    check("SSE 返回 200", resp.status_code == 200, str(resp.status_code))
+    check("SSE 里有提示词事件", '"kind": "prompt"' in body or '"kind":"prompt"' in body)
+    check("任务里带上了年份/批次（不会分析错年份）", target["year"] in body, target["year"])
+    check("提示词要求用 file 精确定位", "read_shiti" in body and target["file"] in body)
 
     print("\n" + "=" * 52)
     print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
