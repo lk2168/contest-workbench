@@ -1,0 +1,10 @@
+# 本地密钥与产物
+.env
+out/
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
