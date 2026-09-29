@@ -102,7 +102,15 @@ def list_shiti() -> str:
     """列出题库里的所有赛题（按年份分组）。"""
     files = _all_md()
     if not files:
-        return f"[错误] 题库为空。已查找：{', '.join(str(d) for d in kb_dirs())}"
+        dirs = kb_dirs()
+        where = "、".join(str(d) for d in dirs) if dirs else "（该分区还没有题库目录）"
+        return (
+            f"[错误] 题库为空。已查找：{where}\n"
+            "重建方式（任选其一）：\n"
+            "  1) python scripts/fetch_history.py                    # 从公开来源批量拉历年赛题\n"
+            "  2) python scripts/extract_shiti.py <你的PDF目录> <目标目录>   # 把自己的 PDF 转成文本\n"
+            "注意：赛题原文因版权不进本仓库，需在你本地自行准备（见 NOTICE.md）。"
+        )
     groups: dict[str, list[str]] = {}
     for item in list_shiti_structured():
         groups.setdefault(item["year"], []).append(
