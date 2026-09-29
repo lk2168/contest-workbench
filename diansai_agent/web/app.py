@@ -30,7 +30,7 @@ from ..tools.shiti import list_shiti, list_shiti_structured
 # ── 平台自我介绍（也是首页"这个项目是什么"的事实来源，改这里就够）───────────
 PLATFORM = {
     "name": "竞赛 Agent 平台",
-    "tagline": "把竞赛赛题变成能照着干的作战方案 —— 第一个给不懂 AI 的大学生用的开源 Agent",
+    "tagline": "把竞赛赛题变成能照着干的方案；控制类数据算成可复核的指标",
     "repo": "https://github.com/lk2168/diansai-agent",
 }
 
