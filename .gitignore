@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# 提交信息临时文件（我用 -F 传多行信息时会产生，别提交）
+.git-msg-*.txt
