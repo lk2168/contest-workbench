@@ -703,7 +703,7 @@ $("goTune").addEventListener("click",async()=>{
 });
 
 /* ── 成果库 ── */
-const KIND={md:["doc","Markdown"],docx:["file","Word"],png:["img","图片"],csv:["box","数据"]};
+const KIND={md:["doc","Markdown"],docx:["file","Word"],pdf:["doc","PDF"],png:["img","图片"],csv:["box","数据"]};
 async function loadFiles(){
   try{
     const d=await(await api("/api/reports")).json();
@@ -711,6 +711,7 @@ async function loadFiles(){
     $("files").innerHTML=d.items.map(x=>{
       const [i,label]=KIND[x.kind]||["file",x.kind];
       const acts=(x.kind==="md"?`<a href="#" data-md="${esc(x.name)}">预览</a>`:"")
+                +(x.kind==="pdf"?`<a href="#" data-pdf="${esc(x.name)}">预览</a>`:"")
                 +(x.kind==="png"?`<a href="#" data-img="${esc(x.name)}">查看</a>`:"")
                 +`<a href="/api/file/${encodeURIComponent(x.name)}">下载</a>`;
       return `<li><span class="fi">${ic(i)}</span>
@@ -735,6 +736,12 @@ async function showReport(name,asImage){
     if(asImage){
       rv.innerHTML=`<div class="card pad-lg"><h3 style="margin-bottom:var(--s3)">${esc(name)}</h3>
         <img class="chart" src="/api/file/${encodeURIComponent(name)}?t=${Date.now()}" alt="${esc(name)}"></div>`;
+    }else if(/\.pdf$/i.test(name)){
+      // PDF 直接在页面里看：Word 打不开的时候，PDF 是最稳的交付格式
+      rv.innerHTML=`<div class="card pad-lg"><div class="head" style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:var(--s3)">
+          <h3>${esc(name)}</h3><a href="/api/file/${encodeURIComponent(name)}" target="_blank">在新窗口打开</a></div>
+        <iframe src="/api/file/${encodeURIComponent(name)}" title="${esc(name)}"
+          style="width:100%;height:78vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe></div>`;
     }else{
       const d=await(await api("/api/file-text/"+encodeURIComponent(name))).json();
       rv.innerHTML=`<div class="card pad-lg article">${md(d.text)}</div>`;
@@ -745,6 +752,7 @@ $("refresh").addEventListener("click",loadFiles);
 $("files").addEventListener("click",e=>{
   const a=e.target.closest("a"); if(!a) return;
   if(a.dataset.md){ e.preventDefault(); showReport(a.dataset.md,false) }
+  if(a.dataset.pdf){ e.preventDefault(); showReport(a.dataset.pdf,false) }
   if(a.dataset.img){ e.preventDefault(); showReport(a.dataset.img,true) }
 });
 // 深链：#分区 直接进分区页；?report=文件名 直接预览该报告（方便把链接发给队友）
