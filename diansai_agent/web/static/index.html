@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>竞赛 Agent 平台</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#fff; --ink:#1f2328; --ink2:#57606a; --line:#e3e7ec;
+    --brand:#1f4e79; --brand2:#2f7fd1; --ok:#1a7f37; --warn:#9a6700; --err:#b3261e;
+    --mono:ui-monospace,SFMono-Regular,Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:"Microsoft YaHei","PingFang SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+       line-height:1.65;font-size:15px}
+  a{color:var(--brand2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  header{background:linear-gradient(135deg,#1f4e79,#2f7fd1);color:#fff;padding:22px 20px 18px}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+  header h1{margin:0 0 4px;font-size:22px;letter-spacing:.5px}
+  header p{margin:0;opacity:.92;font-size:13.5px}
+  .badges{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px}
+  .badge{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
+         border-radius:999px;padding:3px 10px;font-size:12px}
+  main{padding:18px 0 40px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 16px 18px;
+        box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .card h2{margin:0 0 4px;font-size:16.5px;color:var(--brand)}
+  .card .hint{margin:0 0 12px;color:var(--ink2);font-size:12.5px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+  label{font-size:13px;color:var(--ink2)}
+  input[type=text],input[type=number],select,input[type=file]{
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;background:#fff;color:inherit}
+  input[type=text],input[type=number]{min-width:110px}
+  select{min-width:190px}
+  button{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:9px 16px;font:inherit;
+         cursor:pointer;transition:.15s}
+  button:hover{background:#173b5c}
+  button.ghost{background:#eef2f7;color:var(--brand)}
+  button.ghost:hover{background:#e2e9f2}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .log{background:#0f1720;color:#d6e2ee;border-radius:10px;padding:10px 12px;font-family:var(--mono);
+       font-size:12.5px;height:230px;overflow:auto;white-space:pre-wrap;margin-top:10px}
+  .log .ev-step{color:#7dd3fc}
+  .log .ev-tool{color:#fde68a}
+  .log .ev-tool_result{color:#86efac}
+  .log .ev-answer{color:#f9a8d4}
+  .log .ev-error{color:#fca5a5}
+  .log .ev-log{color:#cbd5e1}
+  .out{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px}
+  .out img{max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+  th{background:#f0f4f9;font-weight:600}
+  h3{font-size:15px;margin:14px 0 6px;color:var(--brand)}
+  code{font-family:var(--mono);background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
+  .files{list-style:none;padding:0;margin:0}
+  .files li{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;
+            border-bottom:1px solid var(--line);padding:8px 2px;font-size:13.5px}
+  .files .meta{color:var(--ink2);font-size:12px}
+  .tag{display:inline-block;background:#eef2f7;color:var(--brand);border-radius:6px;padding:1px 7px;
+       font-size:11.5px;margin-right:6px}
+  .status{font-size:12.5px;color:var(--ink2)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px}
+  footer{color:var(--ink2);font-size:12.5px;padding:10px 0 40px;text-align:center}
+  .kv{font-size:12.5px;color:var(--ink2)}
+  details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:10px}
+  summary{cursor:pointer;color:var(--brand);font-size:13.5px}
+  pre{background:#0f1720;color:#d6e2ee;padding:10px;border-radius:8px;overflow:auto;font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1 id="pname">竞赛 Agent 平台</h1>
+    <p id="ptag">正在加载…</p>
+    <div class="badges" id="badges"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="grid">
+    <!-- ① 赛题分析 -->
+    <section class="card">
+      <h2>① 赛题分析 → 作战方案</h2>
+      <p class="hint">选分区、填题号（如 <code>H</code> 或 <code>滚球</code>）。Agent 会自己读题、查官方答疑、翻历年同类题，最后写出方案报告。</p>
+      <div class="row">
+        <label>竞赛分区</label><select id="domain"></select>
+        <label>题号/关键词</label><input type="text" id="shiti" value="H" />
+        <label>最多步数</label><input type="number" id="steps" value="12" min="2" max="30" style="min-width:70px" />
+      </div>
+      <div class="row">
+        <button id="goAnalyze">开始分析</button>
+        <button class="ghost" id="goDemo">只看提示词（0 成本）</button>
+        <span class="status" id="analyzeStatus"></span>
+      </div>
+      <div class="log" id="log">（点「开始分析」后，Agent 的每一步会实时显示在这里）</div>
+      <details id="shitiBox">
+        <summary>查看当前分区的题库</summary>
+        <pre id="shitiText">加载中…</pre>
+      </details>
+      <div class="out" id="analyzeOut"></div>
+    </section>
+
+    <!-- ② 调参助手 -->
+    <section class="card">
+      <h2>② 调参助手（控制类）</h2>
+      <p class="hint">上传阶跃响应数据（两列：时间,幅值；CSV/TXT/串口日志都行）。<b>指标由本地算法计算</b>（不花额度），可再让模型写诊断报告。</p>
+      <div class="row">
+        <input type="file" id="file" accept=".csv,.txt,.log,.dat" />
+      </div>
+      <div class="row">
+        <label>目标值</label><input type="number" step="any" id="target" placeholder="如 1.0" />
+        <label><input type="checkbox" id="useLLM" /> 让模型写诊断报告</label>
+        <button id="goTune">分析数据</button>
+        <button class="ghost" id="goSample">用自带示例数据</button>
+      </div>
+      <div class="status" id="tuneStatus"></div>
+      <div class="out" id="tuneOut"></div>
+    </section>
+  </div>
+
+  <!-- ③ 成果库 -->
+  <section class="card" style="margin-top:16px">
+    <h2>③ 成果库（out/ 目录）</h2>
+    <p class="hint">所有生成的报告与图片都在这里，可直接预览或下载（Word 报告给老师/队友最方便）。</p>
+    <div class="row"><button class="ghost" id="refresh">刷新列表</button>
+      <span class="status" id="filesStatus"></span></div>
+    <ul class="files" id="files"></ul>
+  </section>
+</main>
+
+<footer>
+  本地运行 · 数据与报告只存在你自己的电脑上 · 赛题版权归全国大学生电子设计竞赛组委会及各赛区组委会
+</footer>
+
+<script>
+// ───────────────────────── 小工具：极简 Markdown 渲染（够用就好，不引库）─────────────────────────
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function inline(s){
+  return esc(s)
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
+    .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function mdToHtml(md){
+  const lines = md.replace(/\r/g,"").split("\n");
+  let html=[], i=0, inTable=false, inList=false, inCode=false, codeBuf=[];
+  const closeAll=()=>{ if(inTable){html.push("</table>");inTable=false;} if(inList){html.push("</ul>");inList=false;} };
+  while(i<lines.length){
+    let ln=lines[i];
+    if(ln.trim().startsWith("```")){
+      if(!inCode){inCode=true;codeBuf=[];} else {inCode=false;html.push("<pre>"+esc(codeBuf.join("\n"))+"</pre>");}
+      i++;continue;
+    }
+    if(inCode){codeBuf.push(ln);i++;continue;}
+    if(/^\s*\|/.test(ln) && i+1<lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i+1])){
+      closeAll(); html.push("<table>");
+      const cells=r=>r.trim().replace(/^\||\|$/g,"").split("|").map(c=>c.trim());
+      html.push("<tr>"+cells(ln).map(c=>"<th>"+inline(c)+"</th>").join("")+"</tr>");
+      i+=2;
+      while(i<lines.length && /^\s*\|/.test(lines[i])){
+        html.push("<tr>"+cells(lines[i]).map(c=>"<td>"+inline(c)+"</td>").join("")+"</tr>");
+        i++;
+      }
+      html.push("</table>"); continue;
+    }
+    const h=ln.match(/^(#{1,4})\s+(.*)$/);
+    if(h){ closeAll(); html.push(`<h${h[1].length+1}>`+inline(h[2])+`</h${h[1].length+1}>`); i++; continue; }
+    if(/^\s*[-*]\s+/.test(ln)){ if(!inList){html.push("<ul>");inList=true;} html.push("<li>"+inline(ln.replace(/^\s*[-*]\s+/,""))+"</li>"); i++; continue; }
+    if(inList && !/^\s*[-*]\s+/.test(ln)){ html.push("</ul>"); inList=false; }
+    if(/^\s*>\s?/.test(ln)){ if(!inTable){html.push("<blockquote style='border-left:3px solid #d0d7de;margin:6px 0;padding:2px 10px;color:#57606a'>"+inline(ln.replace(/^\s*>\s?/,""))+"</blockquote>");} i++; continue; }
+    if(ln.trim()===""){ i++; continue; }
+    html.push("<p>"+inline(ln)+"</p>"); i++;
+  }
+  closeAll(); return html.join("\n");
+}
+const $=id=>document.getElementById(id);
+const api=async(u,o)=>{const r=await fetch(u,o); if(!r.ok){const t=await r.text(); throw new Error(r.status+" "+t.slice(0,200));} return r;};
+
+// ───────────────────────── 启动：读平台信息与分区 ─────────────────────────
+(async function init(){
+  try{
+    const h=await (await api("/api/health")).json();
+    $("pname").textContent=h.platform.name;
+    $("ptag").textContent=h.platform.tagline;
+    $("badges").innerHTML=[
+      `<span class="badge">模型：${esc(h.model)}</span>`,
+      `<span class="badge">Key：${esc(h.key_source)}${h.has_key?"":"（未配置）"}</span>`,
+      `<span class="badge">工具 ${h.tools.length} 个</span>`,
+      `<span class="badge"><a style="color:#fff" href="${h.platform.repo}" target="_blank" rel="noopener">源码仓库</a></span>`,
+    ].join("");
+    const d=await (await api("/api/domains")).json();
+    $("domain").innerHTML=d.domains.map(x=>`<option value="${x.id}" ${x.implemented?"":"disabled"}>${x.name}${x.implemented?"":"（规划中）"}</option>`).join("");
+    loadShiti(); loadFiles();
+  }catch(e){ $("ptag").textContent="加载失败："+e.message; }
+})();
+
+async function loadShiti(){
+  const dom=$("domain").value;
+  $("shitiText").textContent="加载中…";
+  try{ const r=await (await api("/api/shiti?domain="+encodeURIComponent(dom))).json();
+       $("shitiText").textContent=r.text; }catch(e){ $("shitiText").textContent="题库加载失败："+e.message; }
+}
+$("domain").addEventListener("change",loadShiti);
+
+// ───────────────────────── ① 赛题分析（SSE 实时进度）─────────────────────────
+function push(kind,text){
+  const el=document.createElement("div");
+  el.className="ev-"+kind; el.textContent=text; $("log").appendChild(el); $("log").scrollTop=$("log").scrollHeight;
+}
+async function runAnalyze(useLLM){
+  const btn=$("goAnalyze"); btn.disabled=true; $("log").textContent=""; $("analyzeOut").innerHTML="";
+  $("analyzeStatus").textContent="运行中…";
+  try{
+    const resp=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({domain:$("domain").value,name:$("shiti").value,steps:+$("steps").value,use_llm:useLLM})});
+    if(!resp.ok) throw new Error(await resp.text());
+    const reader=resp.body.getReader(), dec=new TextDecoder(); let buf="";
+    while(true){
+      const {value,done}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let parts=buf.split("\n\n"); buf=parts.pop();
+      for(const part of parts){
+        if(!part.startsWith("data: ")) continue;
+        const ev=JSON.parse(part.slice(6));
+        if(ev.kind==="step") push("step","── 第 "+ev.n+" 步：问模型 ──");
+        else if(ev.kind==="tool") push("tool","   🔧 调用工具 "+ev.name+"（"+JSON.stringify(ev.args).slice(0,120)+"）");
+        else if(ev.kind==="tool_result") push("tool_result","   ↳ 结果 "+ev.chars+" 字符");
+        else if(ev.kind==="log") push("log",ev.text);
+        else if(ev.kind==="error") push("error","❌ "+ev.text);
+        else if(ev.kind==="usage") $("analyzeStatus").textContent="用量 "+ev.total_tokens+" tokens";
+        else if(ev.kind==="prompt"){
+          $("analyzeOut").innerHTML="<details open><summary>将要发给模型的提示词（演示模式）</summary><pre>"+
+            esc("【System】\n"+ev.system+"\n\n【Task】\n"+ev.task)+"</pre></details>";
+        }
+        else if(ev.kind==="answer" && ev.answer){
+          push("answer","── 最终回答 ──");
+          $("analyzeOut").innerHTML="<div>"+mdToHtml(ev.answer)+"</div>";
+        }
+        else if(ev.kind==="done"){ $("analyzeStatus").textContent+=" · 完成"; loadFiles(); }
+      }
+    }
+  }catch(e){ push("error","请求失败："+e.message); }
+  finally{ btn.disabled=false; }
+}
+$("goAnalyze").onclick=()=>runAnalyze(true);
+$("goDemo").onclick=()=>runAnalyze(false);
+
+// ───────────────────────── ② 调参助手 ─────────────────────────
+$("goSample").onclick=async()=>{
+  $("tuneStatus").textContent="正在取示例数据…";
+  const r=await api("/api/file/step-response-sample.csv"); const blob=await r.blob();
+  const f=new File([blob],"step-response-sample.csv",{type:"text/csv"});
+  const dt=new DataTransfer(); dt.items.add(f); $("file").files=dt.files;
+  $("target").value="1.0"; $("tuneStatus").textContent="已装入示例数据，点「分析数据」";
+};
+$("goTune").onclick=async()=>{
+  const f=$("file").files[0];
+  if(!f){ $("tuneStatus").textContent="请先选文件（或点「用自带示例数据」）"; return; }
+  $("goTune").disabled=true; $("tuneStatus").textContent="计算中…"; $("tuneOut").innerHTML="";
+  try{
+    const fd=new FormData(); fd.append("file",f);
+    fd.append("target",$("target").value); fd.append("use_llm",$("useLLM").checked?"true":"false");
+    const r=await api("/api/tune",{method:"POST",body:fd}); const d=await r.json();
+    let html="<div>"+mdToHtml(d.metrics_md)+"</div>";
+    if(d.plot) html+="<h3>曲线图</h3><img src='/api/file/"+encodeURIComponent(d.plot)+"?t="+Date.now()+"' alt='阶跃响应曲线' />";
+    if(d.report_md) html+="<h3>调参报告</h3><div class='row'><a href='/api/file/"+encodeURIComponent(d.report_md)+"' target='_blank'>预览 Markdown</a>"
+      +(d.report_docx?" · <a href='/api/file/"+encodeURIComponent(d.report_docx)+"'>下载 Word</a>":"")+"</div>";
+    $("tuneOut").innerHTML=html;
+    $("tuneStatus").textContent="完成（数据已存：out/uploads/"+d.saved_data+"）";
+    loadFiles();
+  }catch(e){ $("tuneStatus").textContent="失败："+e.message; }
+  finally{ $("goTune").disabled=false; }
+};
+
+// ───────────────────────── ③ 成果库 ─────────────────────────
+async function loadFiles(){
+  try{
+    const d=await (await api("/api/reports")).json();
+    $("filesStatus").textContent="共 "+d.items.length+" 个文件";
+    $("files").innerHTML=d.items.map(x=>{
+      const tag=x.kind==="docx"?"Word":x.kind==="png"?"图片":x.kind==="md"?"Markdown":x.kind;
+      const view=(x.kind==="md")?`<a href="#" data-md="${esc(x.name)}">预览</a> · `:"";
+      const img=(x.kind==="png")?`<a href="#" data-img="${esc(x.name)}">查看</a> · `:"";
+      return `<li><span><span class="tag">${tag}</span>${esc(x.name)}</span>
+        <span class="meta">${(x.size/1024).toFixed(1)} KB · ${x.mtime} · ${view}${img}
+        <a href="/api/file/${encodeURIComponent(x.name)}">下载</a></span></li>`;
+    }).join("") || "<li class='meta'>还没有产物，先去上面跑一次吧</li>";
+  }catch(e){ $("filesStatus").textContent="列表失败："+e.message; }
+}
+$("refresh").onclick=loadFiles;
+$("files").addEventListener("click",async e=>{
+  const a=e.target.closest("a"); if(!a) return;
+  if(a.dataset.md){ e.preventDefault();
+    const d=await (await api("/api/file-text/"+encodeURIComponent(a.dataset.md))).json();
+    $("tuneOut").innerHTML="<h3>"+esc(a.dataset.md)+"</h3>"+mdToHtml(d.text);
+    window.scrollTo({top:$("tuneOut").offsetTop-60,behavior:"smooth"});
+  }
+  if(a.dataset.img){ e.preventDefault();
+    $("tuneOut").innerHTML="<h3>"+esc(a.dataset.img)+"</h3><img src='/api/file/"+encodeURIComponent(a.dataset.img)+"?t="+Date.now()+"' />";
+    window.scrollTo({top:$("tuneOut").offsetTop-60,behavior:"smooth"});
+  }
+});
+</script>
+</body>
+</html>

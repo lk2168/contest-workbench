@@ -1,0 +1,15 @@
+feat(v0.3): 网页端（SSE 实时进度 + 上传调参 + 成果库）+ 双击启动脚本
+
+网页端（diansai_agent/web/）：
+- FastAPI 接口：/api/analyze（SSE 流式推送 Agent 每一步）、/api/tune（上传数据→指标+曲线图）、
+  /api/reports、/api/file/{name}、/api/file-text/{name}、/api/health、/api/domains、/api/shiti
+- 单文件前端 static/index.html：三卡片（赛题分析 / 调参助手 / 成果库）、
+  零框架零构建零 CDN、中文界面、自带极简 Markdown 渲染、响应式（手机也能开）
+- Agent 改造：loop.py 增加 on_event 回调，把「第 N 步 / 工具调用 / 参数 / 结果字数」结构化推给前端
+- 双击启动：启动网页端.cmd（查依赖 → 清华镜像安装 → 起服务 → 开浏览器）
+
+修一个真问题：工具层把错误当"正常返回"（为了能让模型自纠），但 /api/tune 却回 200，
+前端会把错误当指标渲染。新增 tools.is_error() + ERROR_PREFIX，接口层据此返回 400。
+
+测试：新增 tests/test_web.py 20 项（页面 / 接口 / 上传调参 / 错误处理 / 路径穿越安全），
+三套共 67 项全过（全部离线，不消耗 API）。docs/web-预览.png 为无头 Edge 实拍页面。

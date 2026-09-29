@@ -12,6 +12,9 @@ from .shiti import list_shiti, read_shiti, search_qa, search_tiku
 from .report import write_report
 from .tuning import analyze_step_data
 
+# 工具出错时的统一前缀（模型看得懂，接口层也好判断）
+ERROR_PREFIX = "[错误]"
+
 # 工具名 -> 执行函数
 _FUNCS = {
     "list_shiti": lambda **kw: list_shiti(**kw),
@@ -112,16 +115,25 @@ TOOL_SCHEMAS = [
 
 
 def call_tool(name: str, args: dict) -> str:
-    """按名字执行工具，永远返回字符串（出错也返回错误说明，让模型自己纠错）。"""
+    """按名字执行工具，永远返回字符串（出错也返回错误说明，让模型自己纠错）。
+
+    ⚠️ 注意：**错误也是"正常返回"**（这是为了让模型看到错误并自我纠正）。
+    所以网页/接口层要判断结果是不是错误，别把错误字符串当成功数据用 —— 用 `is_error()`。
+    """
     fn = _FUNCS.get(name)
     if fn is None:
-        return f"[错误] 没有这个工具：{name}。可用工具：{', '.join(_FUNCS)}"
+        return f"{ERROR_PREFIX} 没有这个工具：{name}。可用工具：{', '.join(_FUNCS)}"
     try:
         out = fn(**(args or {}))
         if isinstance(out, (dict, list)):
             return json.dumps(out, ensure_ascii=False)[:20000]
         return str(out)
     except TypeError as e:
-        return f"[错误] 参数不对：{e}"
+        return f"{ERROR_PREFIX} 参数不对：{e}"
     except Exception as e:
-        return f"[错误] 工具执行失败：{type(e).__name__}: {e}"
+        return f"{ERROR_PREFIX} 工具执行失败：{type(e).__name__}: {e}"
+
+
+def is_error(result: str) -> bool:
+    """工具返回的字符串是不是错误说明。"""
+    return str(result).lstrip().startswith(ERROR_PREFIX)

@@ -5,11 +5,17 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![status](https://img.shields.io/badge/status-v0.2-orange)
+![status](https://img.shields.io/badge/status-v0.3-orange)
+![web](https://img.shields.io/badge/%E7%BD%91%E9%A1%B5%E7%AB%AF-%E5%BC%80%E7%AE%B1%E5%8D%B3%E7%94%A8-blue)
+![tests](https://img.shields.io/badge/tests-67%20passed-brightgreen)
 ![domains](https://img.shields.io/badge/domains-%E7%94%B5%E8%B5%9B(%E5%B7%B2%E5%AE%9E%E7%8E%B0)%20%2B%203%20%E4%B8%AA%E8%A7%84%E5%88%92%E4%B8%AD-green)
 
 > **一个面向大学生竞赛的 Agent 平台。** 目前实现了 **电赛** 分区（赛题分析 + 控制类调参），
 > 架构上预留了数学建模 / IT 类 / 创新创业等分区 —— 新增一个竞赛 = 加一份分区配置 + 一个题库目录，**不动核心代码**。
+>
+> 🎯 **目标**：做成**不懂 AI 的大学生接触的第一款开源 AI Agent 项目** —— 有网页界面、能看见 Agent 每一步在干什么、指标可验证。
+
+![网页端预览](docs/web-预览.png)
 
 ---
 
@@ -31,27 +37,49 @@
 
 ```bash
 # 0) 依赖
-pip install -r requirements.txt          # requests / PyYAML / pypdf / python-docx / numpy / matplotlib
+pip install -r requirements.txt          # requests / PyYAML / pypdf / python-docx / numpy / matplotlib / fastapi / uvicorn
 
-# 1) 自检：分区 / Key 从哪来 / 题库有什么题 / 模型名对不对（不花钱）
+# 1) 网页端（推荐先试这个）：Windows 双击 `启动网页端.cmd`，或命令行：
+python cli.py web                        # → 浏览器打开 http://127.0.0.1:8765
+python cli.py web --host 0.0.0.0         # 局域网共享，队友用你的 IP 访问（零安装）
+
+# 2) 自检：分区 / Key 从哪来 / 题库有什么题 / 模型名对不对（不花钱）
 python cli.py --check
 python cli.py --domains                  # 只看分区表
 
-# 2) 空跑：只打印提示词，不调用模型（0 成本，改提示词时用这个）
+# 3) 空跑：只打印提示词，不调用模型（0 成本，改提示词时用这个）
 python cli.py analyze H --dry-run
 
-# 3) 真跑：分析 H 题 → out/H题-分析报告.md + .docx
+# 4) 真跑：分析 H 题 → out/H题-分析报告.md + .docx
 python cli.py analyze H
 
-# 4) 调参（v0.2）：阶跃响应 → 指标 + 曲线图 + PID 建议 + 报告
+# 5) 调参：阶跃响应 → 指标 + 曲线图 + PID 建议 + 报告
 python scripts/make_sample_step.py                        # 先生成一份示例数据（可选）
 python cli.py tune samples/step-response-sample.csv --target 1.0            # 含模型诊断
 python cli.py tune samples/step-response-sample.csv --target 1.0 --no-llm   # 只本地算（0 成本）
 
-# 5) 测试：离线自测 27 项 + 调参算法 20 项（都不消耗额度）
-python tests/test_offline.py
-python tests/test_tuning.py
+# 6) 测试：三套共 67 项，全部离线、不消耗额度
+python tests/test_offline.py    # 27 项：工具链 + 分区
+python tests/test_tuning.py     # 20 项：调参算法（对解析解校验）
+python tests/test_web.py        # 20 项：网页接口 + 上传调参 + 路径安全
 ```
+
+---
+
+## 网页端（v0.3）
+
+三个卡片，覆盖"从读题到出报告"的全流程：
+
+| 卡片 | 干什么 | 可视化 |
+|---|---|---|
+| **① 赛题分析** | 选分区 + 填题号 → Agent 读题/查答疑/翻历年题 → 出作战方案 | ★ **SSE 实时推送**：第几步、调用了哪个工具、参数是什么、返回多少字，全都看得见 |
+| **② 调参助手** | 上传阶跃数据（CSV/TXT/串口日志）→ 指标表 + 曲线图 + PID 建议，可选让模型写诊断报告 | 指标表 + **曲线图**（±2% 稳态带、峰值、目标值标注）+ 一键下载 Word |
+| **③ 成果库** | 列出 `out/` 里所有产物 | Markdown 在线预览、PNG 在线查看、Word 直接下载 |
+
+技术取舍（**为"给不懂 AI 的同学用"服务**）：
+- **FastAPI + 原生 HTML/JS**：仓库里**没有 node_modules、没有构建步骤**，`pip install` 完就能跑；
+- **SSE 而不是 WebSocket**：单向推流足够，实现简单、浏览器兼容好、不需要额外依赖；
+- **单文件前端**（`diansai_agent/web/static/index.html`）：样式与脚本内联、Markdown 自带极简渲染器，不引任何 CDN（离线可用）。
 
 `analyze` 后面可以写**题号**（`H`）或**文件名片段**（`滚球`）；跨年的同题号会自动提示年份。
 
@@ -132,6 +160,9 @@ diansai-agent/
 │   │   ├── system.md            # 角色与铁律（不许编造 / 必须标经验值 / 必须查答疑与历年题）
 │   │   ├── analyze.md           # 赛题分析报告模板（8 章）
 │   │   └── tune.md              # 调参报告模板（6 章）
+│   ├── web/
+│   │   ├── app.py               # ★ 网页端（FastAPI：SSE 进度 / 上传调参 / 成果库）
+│   │   └── static/index.html    # 单文件前端（零构建、零框架、中文界面）
 │   └── tools/
 │       ├── __init__.py          # 工具注册表（JSON Schema + 执行 + 错误兜底）
 │       ├── shiti.py             # 题库：列出 / 读取 / 检索答疑 / 跨年检索（按分区找目录）
@@ -146,7 +177,9 @@ diansai-agent/
 │   └── make_sample_step.py      # 生成示例阶跃数据
 ├── tests/
 │   ├── test_offline.py          # 离线自测 27 项（工具链 + 分区，不含 API 调用）
-│   └── test_tuning.py           # 调参算法 20 项（用解析解已知的二阶系统校验！）
+│   ├── test_tuning.py           # 调参算法 20 项（用解析解已知的二阶系统校验！）
+│   └── test_web.py              # 网页端 20 项（页面 / 接口 / 上传调参 / 路径安全）
+├── 启动网页端.cmd                # Windows 双击即用（自动查依赖 → 起服务 → 开浏览器）
 ├── data/题库/                    # 本地赛题语料（★ 不进版本控制，见下）
 ├── requirements.txt
 ├── LICENSE                      # MIT（只覆盖代码）
@@ -209,11 +242,13 @@ diansai-agent/
 
 | 版本 | 内容 | 验收标准 |
 |---|---|---|
-| ~~v0.1~~ | ~~赛题分析：读题 → 查答疑/历年题 → 出作战方案~~ | ✅ 2026-09-29 完成（H 题实测：8 步 / 24 次工具调用 / 18.8 KB 报告） |
-| **v0.2** | **调参助手**：阶跃响应 → 指标 + 曲线 + PID 建议；**竞赛分区抽象**（平台化第一步） | ✅ 2026-09-29 完成：调参算法用**解析解校验 20 项全过**（σ% 16.31 vs 解析 16.30）；噪声样本三项鲁棒性修复；分区表可切换 |
-| **v0.3** | **评测**：10 条真题任务 → 自动打分（指标覆盖/器件齐全/时间线可行/风险识别）→ 回归报告 | 能看出"改提示词前后"分数变化 |
-| **v0.4** | 接入第 2 个竞赛分区（数学建模最省事：同样是"读题→建模→出方案"） | `--domain mathmodel analyze A` 能跑出可用方案 |
-| v0.5 | Web 界面 + DSH 技能薄壳（队友不装 Python 也能用） | 一份报告能在浏览器里看/下载 |
+| ~~v0.1~~ | ~~赛题分析：读题 → 查答疑/历年题 → 出作战方案~~ | ✅ 完成（H 题实测：8 步 / 24 次工具调用 / 18.8 KB 报告） |
+| ~~v0.2~~ | ~~调参助手 + 竞赛分区抽象~~ | ✅ 完成：调参算法用**解析解校验 20 项全过**（σ% 16.31 vs 解析 16.30） |
+| **v0.3** | **网页端**（SSE 实时进度 / 上传调参 / 成果库）+ 双击启动脚本 | ✅ 2026-09-30 完成：网页测试 20 项通过；队友**零安装**可用 |
+| **v0.4** | **打包成桌面程序**（Tauri / Electron 壳；或先做 DSH 插件薄壳拿到桌面端） | 双击 exe 即用，不要求装 Python |
+| **v0.5** | 接入第 2 个竞赛分区（智能汽车最省事，调参直接复用；数学建模需求已被验证） | `--domain <分区>` 能跑出可用方案 |
+| v0.6 | 评测框架：10 条真题任务 → 自动打分 → 回归报告 | 能看出"改提示词前后"分数变化 |
+| v0.7 | 多用户/云端部署（账号、历史记录、分享链接） | 一个链接能分享一份报告 |
 
 ---
 

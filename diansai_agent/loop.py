@@ -20,16 +20,39 @@ from .tools import TOOL_SCHEMAS, call_tool
 
 class Agent:
     def __init__(self, llm: LLM, system_prompt: str, max_steps: int = 12,
-                 verbose: bool = True) -> None:
+                 verbose: bool = True, on_event=None) -> None:
         self.llm = llm
         self.system_prompt = system_prompt
         self.max_steps = max_steps
         self.verbose = verbose
+        # ★ 事件回调：网页端用它把"第 N 步 / 调用了哪个工具"实时推到浏览器（SSE）
+        self.on_event = on_event
         self.usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-    def _log(self, msg: str) -> None:
+    def _emit(self, kind: str, **data) -> None:
+        """发一个结构化事件（给网页端），同时按需打印到终端。"""
+        ev = {"kind": kind, **data}
+        if self.on_event:
+            try:
+                self.on_event(ev)
+            except Exception:
+                pass  # 前端断了不能拖累 Agent 本体
         if self.verbose:
-            print(msg, flush=True)
+            msg = data.get("text") or ""
+            if kind == "step":
+                print(f"\n── 第 {data.get('n')} 步：问模型 ──", flush=True)
+            elif kind == "tool":
+                args = data.get("args") or {}
+                print(f"   🔧 调用工具 {data.get('name')}（参数：{json.dumps(args, ensure_ascii=False)[:160]}）", flush=True)
+            elif kind == "tool_result":
+                print(f"   ↳ 结果 {data.get('chars')} 字符", flush=True)
+            elif kind == "answer":
+                print("── 模型给出最终回答，结束 ──", flush=True)
+            elif msg:
+                print(msg, flush=True)
+
+    def _log(self, msg: str) -> None:
+        self._emit("log", text=msg)
 
     def run(self, task: str) -> str:
         """跑完一个任务，返回模型的最终回答（文本）。"""
@@ -37,9 +60,10 @@ class Agent:
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": task},
         ]
+        self._emit("start", max_steps=self.max_steps)
 
         for step in range(1, self.max_steps + 1):
-            self._log(f"\n── 第 {step} 步：问模型 ──")
+            self._emit("step", n=step)
             msg = self.llm.chat(messages, tools=TOOL_SCHEMAS)
             for k in self.usage_total:  # 累计 token，最后算钱
                 self.usage_total[k] += (msg.get("_usage") or {}).get(k, 0)
@@ -47,7 +71,7 @@ class Agent:
 
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
-                self._log("── 模型给出最终回答，结束 ──")
+                self._emit("answer", text=msg.get("content") or "")
                 return msg.get("content") or ""
 
             for i, tc in enumerate(tool_calls):
@@ -58,9 +82,9 @@ class Agent:
                     args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
                 except Exception:
                     args = {}
-                self._log(f"   🔧 调用工具 {name}（参数：{json.dumps(args, ensure_ascii=False)[:160]}）")
+                self._emit("tool", name=name, args=args)
                 result = call_tool(name, args)
-                self._log(f"   ↳ 结果 {len(str(result))} 字符")
+                self._emit("tool_result", name=name, chars=len(str(result)))
                 messages.append({
                     # 少数实现会漏掉 id，这里兜一个，否则整个请求会被 API 判为非法
                     "tool_call_id": tc.get("id") or f"call_{step}_{i}",
@@ -68,9 +92,11 @@ class Agent:
                     "content": str(result)[:12000],  # 工具结果别太长，省 token
                 })
 
-        self._log("⚠️ 达到最大步数，强制收尾")
+        self._emit("log", text="⚠️ 达到最大步数，强制收尾")
         messages.append({"role": "user", "content": "请基于已有信息直接给出最终报告，不要再调用工具。"})
         msg = self.llm.chat(messages)
         for k in self.usage_total:  # 收尾那一次调用也要计入
             self.usage_total[k] += (msg.get("_usage") or {}).get(k, 0)
-        return msg.get("content") or ""
+        text = msg.get("content") or ""
+        self._emit("answer", text=text)
+        return text

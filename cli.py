@@ -136,6 +136,21 @@ def cmd_tune(cfg: Config, domain_id: str, path: str, target: float | None,
     return 0
 
 
+def cmd_web(host: str, port: int, reload: bool) -> int:
+    """启动网页端（uvicorn）。"""
+    try:
+        import uvicorn
+    except ImportError:
+        print("❌ 没装 fastapi/uvicorn。请先：pip install fastapi \"uvicorn[standard]\" python-multipart")
+        return 2
+    from diansai_agent.web.app import app
+    shown = host if host not in ("0.0.0.0",) else "127.0.0.1"
+    print(f"── 网页端启动中 ──\n浏览器打开：http://{shown}:{port}\n"
+          f"（局域网共享：换成 --host 0.0.0.0，队友用你的局域网 IP 访问；Ctrl+C 停止）")
+    uvicorn.run(app, host=host, port=port, reload=reload, log_level="warning")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="竞赛 Agent（多分区）：赛题分析 / 控制类调参")
     ap.add_argument("--version", action="version", version="diansai-agent 0.2.0")
@@ -156,6 +171,11 @@ def main() -> int:
     q.add_argument("--title", help="报告/图标题")
     q.add_argument("--no-llm", action="store_true", help="只本地计算，不调用模型（0 成本）")
     q.add_argument("--steps", type=int, default=8, help="最多跑多少步，默认 8")
+
+    w = sub.add_parser("web", help="启动网页端（队友零安装就能用）")
+    w.add_argument("--host", default="127.0.0.1", help="监听地址（局域网共享用 0.0.0.0）")
+    w.add_argument("--port", type=int, default=8765, help="端口，默认 8765")
+    w.add_argument("--reload", action="store_true", help="改代码自动重载（开发用）")
 
     args = ap.parse_args()
 
@@ -180,6 +200,8 @@ def main() -> int:
         return cmd_analyze(cfg, domain_id, args.name, args.steps, args.dry_run)
     if args.cmd == "tune":
         return cmd_tune(cfg, domain_id, args.path, args.target, args.title, args.no_llm, args.steps)
+    if args.cmd == "web":
+        return cmd_web(args.host, args.port, args.reload)
 
     ap.print_help()
     return 1
