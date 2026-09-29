@@ -98,9 +98,19 @@ def health() -> JSONResponse:
 
 @app.get("/api/domains")
 def api_domains() -> JSONResponse:
-    return JSONResponse({"table_md": list_domains(),
-                         "domains": [{"id": d.id, "name": d.name, "implemented": d.implemented,
-                                      "note": d.note} for d in DOMAINS.values()]})
+    """分区清单，并带上该分区**能提供哪些能力**（网页端据此决定显示哪些页签）。
+
+    能力由 domains.py 的 Domain 配置推导：有 tune_template 才有"调参"页签，
+    这样"只有电赛用得上的功能"就不会出现在别的分区里。
+    """
+    out = []
+    for d in DOMAINS.values():
+        caps = ["analyze"]
+        if d.tune_template:
+            caps.append("tune")
+        out.append({"id": d.id, "name": d.name, "implemented": d.implemented,
+                    "note": d.note, "capabilities": caps})
+    return JSONResponse({"table_md": list_domains(), "domains": out})
 
 
 @app.get("/api/shiti")

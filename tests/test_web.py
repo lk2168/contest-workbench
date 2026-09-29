@@ -34,10 +34,24 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 def main() -> int:
     print("== 1. 页面与健康检查 ==")
     r = client.get("/")
+    html = r.text
     check("首页可访问（200）", r.status_code == 200, str(r.status_code))
-    check("首页含中文标题", "竞赛 Agent 平台" in r.text)
+    check("首页含中文标题", "竞赛 Agent 平台" in html)
     check("首页是自包含单文件（含内联样式与脚本）",
-          "<style>" in r.text and "<script>" in r.text and "cdn" not in r.text.lower())
+          "<style>" in html and "<script>" in html and "cdn" not in html.lower())
+
+    print("\n== 1b. 信息架构：小白第一眼只看得到「选择竞赛」==")
+    check("首屏是分区选择视图", 'id="viewHome"' in html and "选择一个竞赛" in html)
+    check("首屏没有技术参数（最多步数藏在设置里）",
+          'id="settingsDrawer"' in html and html.index('id="settingsDrawer"') < html.index('id="steps"'))
+    check("设置抽屉默认隐藏", 'id="settingsDrawer" hidden' in html)
+    check("设置里含「最多步数」并带人话解释", "最多步数" in html and "最多思考几步" in html)
+    check("调参面板默认隐藏（只在具备该能力的分区显示）",
+          'id="panelTune" hidden' in html)
+    check("二级页面有返回入口", 'id="backHome"' in html and "全部竞赛" in html)
+    emojis = ["🔧", "↳", "✅", "❌", "⚙", "🎯", "🚧"]
+    hit = [e for e in emojis if e in html]
+    check("界面零 emoji（设计规范：不用字符当图标）", not hit, "仍含：" + "".join(hit))
 
     r = client.get("/api/health")
     h = r.json()
@@ -49,6 +63,10 @@ def main() -> int:
     print("\n== 2. 分区与题库 ==")
     d = client.get("/api/domains").json()
     check("分区表有 markdown", "diansai" in d.get("table_md", ""))
+    caps = {x["id"]: x.get("capabilities", []) for x in d["domains"]}
+    check("电赛具备调参能力（capabilities 含 tune）", "tune" in caps.get("diansai", []), str(caps))
+    check("规划中分区没有调参能力（页签不会出现）", "tune" not in caps.get("mathmodel", []), str(caps))
+    check("所有分区都有赛题分析能力", all("analyze" in v for v in caps.values()))
     s = client.get("/api/shiti?domain=diansai").json()
     check("题库能列出", "题" in s.get("text", "") and len(s["text"]) > 100)
     bad = client.get("/api/shiti?domain=不存在的分区")

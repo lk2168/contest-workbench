@@ -5,344 +5,459 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>竞赛 Agent 平台</title>
 <style>
+  /* ── Swiss：纯白底 + 单一强调色（Yves Klein Blue）+ 1px 细线 + 左对齐 + 表格数字 ── */
   :root{
-    --bg:#f5f7fa; --card:#fff; --ink:#1f2328; --ink2:#57606a; --line:#e3e7ec;
-    --brand:#1f4e79; --brand2:#2f7fd1; --ok:#1a7f37; --warn:#9a6700; --err:#b3261e;
-    --mono:ui-monospace,SFMono-Regular,Consolas,"Courier New",monospace;
+    --surface:#FFFFFF; --bg:#F7F7F8; --ink:#111111; --muted:#666666;
+    --rule:#E4E4E7; --rule-strong:#111111; --accent:#002FA7; --accent-soft:#EEF1FA;
+    --sans:"Helvetica Neue",Helvetica,Arial,"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-       font-family:"Microsoft YaHei","PingFang SC",system-ui,-apple-system,"Segoe UI",sans-serif;
-       line-height:1.65;font-size:15px}
-  a{color:var(--brand2);text-decoration:none}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6}
+  /* 所有数字用等宽数字，便于纵向对齐（Swiss 把数字当排版元素） */
+  body{font-variant-numeric:tabular-nums}
+  a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
-  header{background:linear-gradient(135deg,#1f4e79,#2f7fd1);color:#fff;padding:22px 20px 18px}
-  .wrap{max-width:1180px;margin:0 auto;padding:0 16px}
-  header h1{margin:0 0 4px;font-size:22px;letter-spacing:.5px}
-  header p{margin:0;opacity:.92;font-size:13.5px}
-  .badges{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px}
-  .badge{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
-         border-radius:999px;padding:3px 10px;font-size:12px}
-  main{padding:18px 0 40px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  @media(max-width:900px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 16px 18px;
-        box-shadow:0 1px 2px rgba(16,24,40,.04)}
-  .card h2{margin:0 0 4px;font-size:16.5px;color:var(--brand)}
-  .card .hint{margin:0 0 12px;color:var(--ink2);font-size:12.5px}
-  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
-  label{font-size:13px;color:var(--ink2)}
-  input[type=text],input[type=number],select,input[type=file]{
-    border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;background:#fff;color:inherit}
-  input[type=text],input[type=number]{min-width:110px}
-  select{min-width:190px}
-  button{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:9px 16px;font:inherit;
-         cursor:pointer;transition:.15s}
-  button:hover{background:#173b5c}
-  button.ghost{background:#eef2f7;color:var(--brand)}
-  button.ghost:hover{background:#e2e9f2}
-  button:disabled{opacity:.55;cursor:not-allowed}
-  .log{background:#0f1720;color:#d6e2ee;border-radius:10px;padding:10px 12px;font-family:var(--mono);
-       font-size:12.5px;height:230px;overflow:auto;white-space:pre-wrap;margin-top:10px}
-  .log .ev-step{color:#7dd3fc}
-  .log .ev-tool{color:#fde68a}
-  .log .ev-tool_result{color:#86efac}
-  .log .ev-answer{color:#f9a8d4}
-  .log .ev-error{color:#fca5a5}
-  .log .ev-log{color:#cbd5e1}
-  .preview{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
-           max-height:210px;overflow:auto;white-space:pre-wrap;font-size:13px;color:#333;
-           font-family:var(--mono);margin:4px 0 10px}
-  .preview.expanded{max-height:70vh}
-  .preview .pmeta{font-family:inherit;color:var(--brand);font-weight:600;margin-bottom:6px}
-  .out{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px}
-  .out img{max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff}
+  h1{font-size:26px;line-height:1.25;margin:0 0 6px;letter-spacing:-.01em}
+  h2{font-size:17px;margin:0 0 10px;letter-spacing:-.005em}
+  h3{font-size:15px;margin:18px 0 6px}
+  p{margin:0 0 10px}
+  .muted{color:var(--muted)}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  /* 顶栏：细线 + 左对齐 + 右侧唯一操作 */
+  header.top{background:var(--surface);border-bottom:1px solid var(--rule-strong)}
+  header.top .wrap{display:flex;align-items:baseline;gap:14px;height:52px}
+  .brand{font-weight:700;letter-spacing:-.01em}
+  .crumb{color:var(--muted);font-size:13.5px}
+  .grow{flex:1}
+  main{padding:26px 0 60px}
+
+  /* 按钮：方角、细线、克制的强调色 */
+  button{font:inherit;cursor:pointer;border:1px solid var(--rule-strong);background:var(--surface);
+         color:var(--ink);padding:7px 14px;border-radius:0}
+  button:hover{background:var(--bg)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.08)}
+  button.quiet{border-color:var(--rule)}
+  button.quiet:hover{border-color:var(--rule-strong)}
+  button.link{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  select,input[type=number],input[type=file]{font:inherit;border:1px solid var(--rule-strong);
+         background:var(--surface);padding:6px 8px;border-radius:0;color:inherit;max-width:100%}
+
+  /* 分区卡片：网格线分隔（Swiss 的"可见网格"） */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));gap:0;
+         border-top:1px solid var(--rule);border-left:1px solid var(--rule);margin-top:18px}
+  .card{border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);background:var(--surface);
+        padding:16px 16px 18px;text-align:left;display:block;cursor:pointer;border-radius:0}
+  .card[disabled]{cursor:not-allowed;background:var(--bg);color:var(--muted)}
+  .card:hover:not([disabled]){background:var(--accent-soft)}
+  .card .name{font-weight:700;margin-bottom:4px}
+  .card .state{font-size:12.5px;color:var(--muted)}
+  .card .note{font-size:12.5px;color:var(--muted);margin-top:8px}
+
+  /* 二级页签 */
+  nav.tabs{border-bottom:1px solid var(--rule-strong);margin:18px 0 0;display:flex;gap:22px}
+  nav.tabs button{border:0;border-bottom:2px solid transparent;background:none;padding:8px 0;color:var(--muted)}
+  nav.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:700}
+  nav.tabs button:hover{background:none;color:var(--ink)}
+
+  /* 双栏工作台：一条 1px 竖线贯穿（差异动作） */
+  .work{display:grid;grid-template-columns:1fr 1px 1fr;gap:0;border-bottom:1px solid var(--rule)}
+  .work>div{padding:18px 0}
+  .work .ruler{background:var(--rule)}
+  .work .left{padding-right:22px}
+  .work .right{padding-left:22px}
+  @media(max-width:880px){
+    .work{grid-template-columns:1fr}
+    .work .ruler{display:none}
+    .work .left,.work .right{padding:16px 0}
+  }
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
+  .field select{width:100%}
+
+  /* 题面预览 / 控制台：均为"数据读出"块，方角细线 */
+  .readout{border:1px solid var(--rule);background:var(--surface);padding:12px;
+           max-height:220px;overflow:auto;white-space:pre-wrap;font-size:13px;line-height:1.55}
+  .readout.tall{max-height:70vh}
+  .readout .cap{color:var(--accent);font-weight:700;display:block;margin-bottom:6px}
+  .console{background:var(--ink);color:#EDEDED;padding:12px;min-height:220px;max-height:340px;
+           overflow:auto;font-size:13px;line-height:1.6}
+  .console .row{display:grid;grid-template-columns:34px 1fr;gap:10px}
+  .console .no{color:#8E8E93}
+  .console .ev-tool{color:#FFFFFF;font-weight:700}
+  .console .ev-error{color:#FF9F0A}
+  .console .ev-answer{font-weight:700}
+  .empty{color:var(--muted);font-size:13px}
+
+  /* 设置抽屉：默认隐藏，点「设置」才出现 */
+  .drawer{border:1px solid var(--rule-strong);background:var(--surface);padding:16px 18px;margin:16px 0 0}
+  .drawer .line{display:grid;grid-template-columns:190px 1fr;gap:12px;align-items:center;
+                padding:9px 0;border-bottom:1px solid var(--rule)}
+  .drawer .line:last-child{border-bottom:0}
+  .drawer .line span.hint{display:block;color:var(--muted);font-size:12.5px}
+
   table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
-  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
-  th{background:#f0f4f9;font-weight:600}
-  h3{font-size:15px;margin:14px 0 6px;color:var(--brand)}
-  code{font-family:var(--mono);background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
-  .files{list-style:none;padding:0;margin:0}
-  .files li{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;
-            border-bottom:1px solid var(--line);padding:8px 2px;font-size:13.5px}
-  .files .meta{color:var(--ink2);font-size:12px}
-  .tag{display:inline-block;background:#eef2f7;color:var(--brand);border-radius:6px;padding:1px 7px;
-       font-size:11.5px;margin-right:6px}
-  .status{font-size:12.5px;color:var(--ink2)}
-  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px}
-  footer{color:var(--ink2);font-size:12.5px;padding:10px 0 40px;text-align:center}
-  .kv{font-size:12.5px;color:var(--ink2)}
-  details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:10px}
-  summary{cursor:pointer;color:var(--brand);font-size:13.5px}
-  pre{background:#0f1720;color:#d6e2ee;padding:10px;border-radius:8px;overflow:auto;font-size:12.5px}
+  th,td{border:1px solid var(--rule);padding:6px 9px;text-align:left;vertical-align:top}
+  th{background:var(--bg);font-weight:700}
+  code{background:var(--bg);padding:1px 5px;font-size:12.5px}
+  ul.files{list-style:none;padding:0;margin:8px 0 0}
+  ul.files li{display:flex;gap:12px;align-items:baseline;justify-content:space-between;
+              border-bottom:1px solid var(--rule);padding:9px 0;font-size:13.5px}
+  ul.files li>span:first-child{display:flex;gap:10px;align-items:baseline;min-width:0}
+  .kind{color:var(--muted);flex:0 0 74px}   /* 定宽列：行内元素上 min-width 不生效，必须用 flex-basis */
+  img.chart{max-width:100%;border:1px solid var(--rule);background:#fff}
+  footer{border-top:1px solid var(--rule);color:var(--muted);font-size:12.5px;padding:16px 0 40px}
 </style>
 </head>
 <body>
-<header>
+<header class="top">
   <div class="wrap">
-    <h1 id="pname">竞赛 Agent 平台</h1>
-    <p id="ptag">正在加载…</p>
-    <div class="badges" id="badges"></div>
+    <span class="brand">竞赛 Agent 平台</span>
+    <span class="crumb" id="crumb">选择竞赛</span>
+    <span class="grow"></span>
+    <button class="quiet" id="btnSettings" aria-expanded="false" aria-controls="settingsDrawer">设置</button>
   </div>
 </header>
 
 <main class="wrap">
-  <div class="grid">
-    <!-- ① 赛题分析 -->
-    <section class="card">
-      <h2>① 赛题分析 → 作战方案</h2>
-      <p class="hint">选分区、填题号（如 <code>H</code> 或 <code>滚球</code>）。Agent 会自己读题、查官方答疑、翻历年同类题，最后写出方案报告。</p>
-      <div class="row">
-        <label>竞赛分区</label><select id="domain"></select>
-        <label>年份/批次</label><select id="year" style="min-width:150px"></select>
+  <!-- 设置：默认隐藏，小白第一眼看不到「最多步数」这类参数 -->
+  <section class="drawer" id="settingsDrawer" hidden>
+    <h2>设置</h2>
+    <div class="line">
+      <label for="steps">最多步数</label>
+      <div>
+        <input type="number" id="steps" min="2" max="30" value="12" style="width:88px" />
+        <span class="hint">允许 Agent 最多思考几步。越大越可能想周全，也越慢、越费额度；默认 12 够用。</span>
       </div>
-      <div class="row">
-        <label>题目</label><select id="shitiSel" style="flex:1;min-width:300px"></select>
-        <label title="Agent 最多跑多少步（越大越久，也越贵）">最多步数</label>
-        <input type="number" id="steps" value="12" min="2" max="30" style="min-width:70px;width:80px" />
-      </div>
-      <div class="preview" id="preview">（选好题目后，这里显示题面预览）</div>
-      <div class="row">
-        <button id="goAnalyze">开始分析这题</button>
-        <button class="ghost" id="goDemo">只看提示词（0 成本）</button>
-        <button class="ghost" id="goFull">展开题面全文</button>
-        <span class="status" id="analyzeStatus"></span>
-      </div>
-      <div class="log" id="log">（点「开始分析这题」后，Agent 的每一步会实时显示在这里）</div>
-      <div class="out" id="analyzeOut"></div>
-    </section>
+    </div>
+    <div class="line">
+      <label for="modelName">模型</label>
+      <div><span id="modelName" class="muted">读取中</span>
+        <span class="hint">在 <code>.env</code> 里改 <code>DEEPSEEK_MODEL</code>，或启动时加 <code>--model</code>。</span></div>
+    </div>
+    <div class="line">
+      <label for="demoMode">只看提示词（不调用模型）</label>
+      <div><input type="checkbox" id="demoMode" />
+        <span class="hint">勾选后只展示将发给模型的内容，不消耗额度，用于检查提示词。</span></div>
+    </div>
+    <div class="line">
+      <label>API Key 来源</label>
+      <div><span id="keySource" class="muted">读取中</span>
+        <span class="hint">Key 只在本地读取，不打印、不进版本库。</span></div>
+    </div>
+  </section>
 
-    <!-- ② 调参助手 -->
-    <section class="card">
-      <h2>② 调参助手（控制类）</h2>
-      <p class="hint">上传阶跃响应数据（两列：时间,幅值；CSV/TXT/串口日志都行）。<b>指标由本地算法计算</b>（不花额度），可再让模型写诊断报告。</p>
-      <div class="row">
-        <input type="file" id="file" accept=".csv,.txt,.log,.dat" />
-      </div>
-      <div class="row">
-        <label>目标值</label><input type="number" step="any" id="target" placeholder="如 1.0" />
-        <label><input type="checkbox" id="useLLM" /> 让模型写诊断报告</label>
-        <button id="goTune">分析数据</button>
-        <button class="ghost" id="goSample">用自带示例数据</button>
-      </div>
-      <div class="status" id="tuneStatus"></div>
-      <div class="out" id="tuneOut"></div>
-    </section>
-  </div>
+  <!-- 视图一：选择竞赛（首屏只有这个，没有任何参数） -->
+  <section id="viewHome">
+    <h1>选择一个竞赛</h1>
+    <p class="muted">平台把赛题变成可执行的方案。每个竞赛有各自的题库、评分口径与工具。</p>
+    <div class="cards" id="domainCards"></div>
+  </section>
 
-  <!-- ③ 成果库 -->
-  <section class="card" style="margin-top:16px">
-    <h2>③ 成果库（out/ 目录）</h2>
-    <p class="hint">所有生成的报告与图片都在这里，可直接预览或下载（Word 报告给老师/队友最方便）。</p>
-    <div class="row"><button class="ghost" id="refresh">刷新列表</button>
-      <span class="status" id="filesStatus"></span></div>
-    <ul class="files" id="files"></ul>
+  <!-- 视图二：某竞赛的工作台（二级页面） -->
+  <section id="viewDomain" hidden>
+    <button class="link" id="backHome">← 全部竞赛</button>
+    <h1 id="domainTitle" style="margin-top:10px"></h1>
+    <p class="muted" id="domainNote"></p>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+
+    <!-- 页签一：赛题分析 -->
+    <div id="panelAnalyze" class="work" role="tabpanel">
+      <div class="left">
+        <div class="field">
+          <label for="year">年份 / 批次</label>
+          <select id="year"></select>
+        </div>
+        <div class="field">
+          <label for="shitiSel">题目</label>
+          <select id="shitiSel"></select>
+        </div>
+        <button class="quiet" id="goFull">展开题面全文</button>
+        <div class="readout" id="preview" style="margin-top:12px">选好题目后这里显示题面。</div>
+        <div style="margin-top:12px">
+          <button class="primary" id="goAnalyze">开始分析</button>
+          <span class="muted" id="analyzeStatus" style="margin-left:10px"></span>
+        </div>
+      </div>
+      <div class="ruler"></div>
+      <div class="right">
+        <h2>分析进度</h2>
+        <div class="console" id="log"><div class="row"><span class="no">—</span><span class="empty">点「开始分析」后，这里按步显示 Agent 的动作。</span></div></div>
+        <div id="analyzeOut"></div>
+      </div>
+    </div>
+
+    <!-- 页签二：调参助手（只在该分区具备该能力时出现，目前仅电赛） -->
+    <div id="panelTune" hidden role="tabpanel">
+      <div class="work">
+        <div class="left">
+          <h2>数据</h2>
+          <p class="muted" style="font-size:13px">阶跃响应数据，两列：时间, 幅值。CSV / TXT / 串口日志都可以。</p>
+          <div class="field"><input type="file" id="file" accept=".csv,.txt,.log,.dat" /></div>
+          <div class="field">
+            <label for="target">目标值（可留空）</label>
+            <input type="number" step="any" id="target" placeholder="例如 1.0" />
+          </div>
+          <div style="margin-bottom:12px">
+            <input type="checkbox" id="useLLM" />
+            <label for="useLLM" style="display:inline">再让模型写一份诊断报告</label>
+          </div>
+          <button class="primary" id="goTune">分析数据</button>
+          <button class="quiet" id="goSample">用示例数据</button>
+          <div class="muted" id="tuneStatus" style="margin-top:10px"></div>
+        </div>
+        <div class="ruler"></div>
+        <div class="right">
+          <h2>指标与曲线</h2>
+          <div id="tuneOut" class="empty">指标由本地算法计算（不消耗额度），可再让模型写诊断。</div>
+        </div>
+      </div>
+    </div>
+
+    <section style="margin-top:24px">
+      <h2>成果库</h2>
+      <p class="muted" style="font-size:13px">报告与图片保存在本机 <code>out/</code>：Markdown 可在线预览，Word 适合交作业与给队友。</p>
+      <button class="quiet" id="refresh">刷新</button>
+      <span class="muted" id="filesStatus" style="margin-left:10px"></span>
+      <ul class="files" id="files"></ul>
+    </section>
   </section>
 </main>
 
-<footer>
-  本地运行 · 数据与报告只存在你自己的电脑上 · 赛题版权归全国大学生电子设计竞赛组委会及各赛区组委会
+<footer class="wrap">
+  本地运行，数据与报告只保存在这台电脑上。赛题版权归全国大学生电子设计竞赛组委会及各赛区组委会。
+  <a href="https://github.com/lk2168/diansai-agent" target="_blank" rel="noopener">源码仓库</a>
 </footer>
 
 <script>
-// ───────────────────────── 小工具：极简 Markdown 渲染（够用就好，不引库）─────────────────────────
-function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function inline(s){
-  return esc(s)
-    .replace(/`([^`]+)`/g,"<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
-    .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
-}
-function mdToHtml(md){
-  const lines = md.replace(/\r/g,"").split("\n");
-  let html=[], i=0, inTable=false, inList=false, inCode=false, codeBuf=[];
-  const closeAll=()=>{ if(inTable){html.push("</table>");inTable=false;} if(inList){html.push("</ul>");inList=false;} };
-  while(i<lines.length){
-    let ln=lines[i];
-    if(ln.trim().startsWith("```")){
-      if(!inCode){inCode=true;codeBuf=[];} else {inCode=false;html.push("<pre>"+esc(codeBuf.join("\n"))+"</pre>");}
-      i++;continue;
-    }
-    if(inCode){codeBuf.push(ln);i++;continue;}
-    if(/^\s*\|/.test(ln) && i+1<lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i+1])){
-      closeAll(); html.push("<table>");
+const $=id=>document.getElementById(id);
+const state={domains:[],items:[],cur:null,domain:null,tab:"analyze",
+             steps:+(localStorage.getItem("steps")||12),
+             demo:localStorage.getItem("demo")==="1"};
+$("steps").value=state.steps; $("demoMode").checked=state.demo;
+$("steps").addEventListener("change",()=>{state.steps=+$("steps").value||12;localStorage.setItem("steps",state.steps)});
+$("demoMode").addEventListener("change",()=>{state.demo=$("demoMode").checked;localStorage.setItem("demo",state.demo?"1":"0")});
+$("btnSettings").addEventListener("click",()=>{
+  const d=$("settingsDrawer"); d.hidden=!d.hidden;
+  $("btnSettings").setAttribute("aria-expanded",String(!d.hidden));
+});
+
+// ── 极简 Markdown 渲染（表格/标题/列表/引用/代码）──
+const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const inline=s=>esc(s).replace(/`([^`]+)`/g,"<code>$1</code>")
+  .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
+  .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+function md(md){
+  const L=md.replace(/\r/g,"").split("\n"); let o=[],i=0,inT=false,inL=false,inC=false,buf=[];
+  const close=()=>{if(inT){o.push("</table>");inT=false}if(inL){o.push("</ul>");inL=false}};
+  while(i<L.length){
+    let ln=L[i];
+    if(ln.trim().startsWith("```")){ if(!inC){inC=true;buf=[]} else {inC=false;o.push("<pre>"+esc(buf.join("\n"))+"</pre>")} i++;continue }
+    if(inC){buf.push(ln);i++;continue}
+    if(/^\s*\|/.test(ln)&&i+1<L.length&&/^\s*\|[\s:|-]+\|\s*$/.test(L[i+1])){
+      close();o.push("<table>");
       const cells=r=>r.trim().replace(/^\||\|$/g,"").split("|").map(c=>c.trim());
-      html.push("<tr>"+cells(ln).map(c=>"<th>"+inline(c)+"</th>").join("")+"</tr>");
-      i+=2;
-      while(i<lines.length && /^\s*\|/.test(lines[i])){
-        html.push("<tr>"+cells(lines[i]).map(c=>"<td>"+inline(c)+"</td>").join("")+"</tr>");
-        i++;
-      }
-      html.push("</table>"); continue;
+      o.push("<tr>"+cells(ln).map(c=>"<th>"+inline(c)+"</th>").join("")+"</tr>"); i+=2;
+      while(i<L.length&&/^\s*\|/.test(L[i])){o.push("<tr>"+cells(L[i]).map(c=>"<td>"+inline(c)+"</td>").join("")+"</tr>");i++}
+      o.push("</table>");continue;
     }
     const h=ln.match(/^(#{1,4})\s+(.*)$/);
-    if(h){ closeAll(); html.push(`<h${h[1].length+1}>`+inline(h[2])+`</h${h[1].length+1}>`); i++; continue; }
-    if(/^\s*[-*]\s+/.test(ln)){ if(!inList){html.push("<ul>");inList=true;} html.push("<li>"+inline(ln.replace(/^\s*[-*]\s+/,""))+"</li>"); i++; continue; }
-    if(inList && !/^\s*[-*]\s+/.test(ln)){ html.push("</ul>"); inList=false; }
-    if(/^\s*>\s?/.test(ln)){ if(!inTable){html.push("<blockquote style='border-left:3px solid #d0d7de;margin:6px 0;padding:2px 10px;color:#57606a'>"+inline(ln.replace(/^\s*>\s?/,""))+"</blockquote>");} i++; continue; }
-    if(ln.trim()===""){ i++; continue; }
-    html.push("<p>"+inline(ln)+"</p>"); i++;
+    if(h){close();o.push(`<h${h[1].length+1}>`+inline(h[2])+`</h${h[1].length+1}>`);i++;continue}
+    if(/^\s*[-*]\s+/.test(ln)){if(!inL){o.push("<ul>");inL=true}o.push("<li>"+inline(ln.replace(/^\s*[-*]\s+/,""))+"</li>");i++;continue}
+    if(inL&&!/^\s*[-*]\s+/.test(ln)){o.push("</ul>");inL=false}
+    if(/^\s*>\s?/.test(ln)){o.push("<p class='muted'>"+inline(ln.replace(/^\s*>\s?/,""))+"</p>");i++;continue}
+    if(ln.trim()===""){i++;continue}
+    o.push("<p>"+inline(ln)+"</p>");i++;
   }
-  closeAll(); return html.join("\n");
+  close();return o.join("\n");
 }
-const $=id=>document.getElementById(id);
-const api=async(u,o)=>{const r=await fetch(u,o); if(!r.ok){const t=await r.text(); throw new Error(r.status+" "+t.slice(0,200));} return r;};
+const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok)throw new Error((await r.text()).slice(0,180));return r};
 
-// ───────────────────────── 启动：读平台信息与分区 ─────────────────────────
+// ── 首屏：竞赛分区卡片 ──
 (async function init(){
   try{
-    const h=await (await api("/api/health")).json();
-    $("pname").textContent=h.platform.name;
-    $("ptag").textContent=h.platform.tagline;
-    $("badges").innerHTML=[
-      `<span class="badge">模型：${esc(h.model)}</span>`,
-      `<span class="badge">Key：${esc(h.key_source)}${h.has_key?"":"（未配置）"}</span>`,
-      `<span class="badge">工具 ${h.tools.length} 个</span>`,
-      `<span class="badge"><a style="color:#fff" href="${h.platform.repo}" target="_blank" rel="noopener">源码仓库</a></span>`,
-    ].join("");
-    const d=await (await api("/api/domains")).json();
-    $("domain").innerHTML=d.domains.map(x=>`<option value="${x.id}" ${x.implemented?"":"disabled"}>${x.name}${x.implemented?"":"（规划中）"}</option>`).join("");
-    await loadShitiList(); loadFiles();
-  }catch(e){ $("ptag").textContent="加载失败："+e.message; }
+    const h=await(await api("/api/health")).json();
+    $("modelName").textContent=h.model;
+    $("keySource").textContent=h.key_source+(h.has_key?"":"（未配置）");
+    const d=await(await api("/api/domains")).json();
+    state.domains=d.domains;
+    $("domainCards").innerHTML=d.domains.map(x=>`
+      <button class="card" data-id="${x.id}" ${x.implemented?"":"disabled"}>
+        <div class="name">${esc(x.name)}</div>
+        <div class="state">${x.implemented?"可用":"规划中"}</div>
+        ${x.note?`<div class="note">${esc(x.note)}</div>`:""}
+      </button>`).join("");
+    $("domainCards").addEventListener("click",e=>{
+      const b=e.target.closest(".card"); if(!b||b.disabled) return; openDomain(b.dataset.id);
+    });
+  }catch(e){ $("domainCards").innerHTML="<p class='muted'>加载失败："+esc(e.message)+"</p>"; }
 })();
 
-// ───────────────────────── 题库：年份/批次 → 题目（两级选择 + 题面预览）─────────────────────────
-let SHITI=[], CUR=null;
+function show(view){ $("viewHome").hidden=view!=="home"; $("viewDomain").hidden=view!=="domain"; }
+$("backHome").addEventListener("click",()=>{show("home");$("crumb").textContent="选择竞赛";history.replaceState(null,"","#")});
+
+// ── 二级页面：某竞赛的工作台 ──
+async function openDomain(id){
+  const dom=state.domains.find(x=>x.id===id); if(!dom) return;
+  state.domain=dom; state.tab="analyze";
+  $("domainTitle").textContent=dom.name;
+  $("domainNote").textContent=dom.note||"";
+  $("crumb").textContent=dom.name;
+  history.replaceState(null,"","#"+id);
+  show("domain");
+  // 页签：调参只在分区具备该能力时出现（目前仅电赛）
+  const caps=dom.capabilities||["analyze"];
+  const tabs=[["analyze","赛题分析"]];
+  if(caps.includes("tune")) tabs.push(["tune","调参助手"]);
+  $("tabs").innerHTML=tabs.map(([k,label])=>
+    `<button role="tab" data-tab="${k}" aria-selected="${k===state.tab}">${label}</button>`).join("");
+  $("tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(b)switchTab(b.dataset.tab)});
+  $("panelTune").hidden=!caps.includes("tune");
+  switchTab("analyze");
+  await loadShitiList();
+  loadFiles();
+}
+function switchTab(k){
+  state.tab=k;
+  [...$("tabs").querySelectorAll("button")].forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tab===k)));
+  $("panelAnalyze").hidden=k!=="analyze";
+  $("panelTune").hidden=k!=="tune"||!($("tabs").querySelector('button[data-tab="tune"]'));
+}
+
+// ── 题目：年份/批次 → 题目（两级），并预览题面 ──
 async function loadShitiList(){
-  const dom=$("domain").value;
-  $("preview").innerHTML="（正在读取题库…）";
-  try{
-    const d=await (await api("/api/shiti-list?domain="+encodeURIComponent(dom))).json();
-    SHITI=d.items||[];
-    $("year").innerHTML='<option value="">全部年份/批次</option>'+
-      (d.years||[]).map(y=>`<option value="${y}">${y}</option>`).join("");
-    $("year").value=(d.years||[])[0]||"";      // 默认选最新一批
-    fillShitiSelect();
-  }catch(e){ $("preview").textContent="题库加载失败："+e.message; }
+  $("preview").textContent="正在读取题库…";
+  const d=await(await api("/api/shiti-list?domain="+encodeURIComponent(state.domain.id))).json();
+  state.items=d.items||[];
+  $("year").innerHTML=(d.years||[]).map(y=>`<option value="${y}">${y}</option>`).join("");
+  fillShitiSelect();
 }
 function fillShitiSelect(){
   const y=$("year").value;
-  const list=SHITI.filter(x=>!y||x.year===y);
+  const list=state.items.filter(x=>!y||x.year===y);
   $("shitiSel").innerHTML=list.map(x=>`<option value="${esc(x.file)}">${esc(x.code)} 题 · ${esc(x.title)}</option>`).join("")
-    || '<option value="">（该批次没有题目）</option>';
-  loadPreview();
+    ||'<option value="">（该批次没有题目）</option>';
+  loadPreview(false);
 }
 async function loadPreview(expand){
   const file=$("shitiSel").value;
-  CUR=SHITI.find(x=>x.file===file)||null;
-  if(!file||!CUR){ $("preview").textContent="（没有可预览的题目）"; return; }
-  $("preview").innerHTML='<div class="pmeta">'+esc(CUR.label)+'</div>(正在读取题面…)';
+  state.cur=state.items.find(x=>x.file===file)||null;
+  if(!state.cur){$("preview").textContent="（没有可预览的题目）";return}
+  $("preview").innerHTML='<span class="cap">'+esc(state.cur.label)+'</span>正在读取…';
   try{
-    const d=await (await api(`/api/shiti-detail?file=${encodeURIComponent(file)}&max_chars=${expand?200000:1800}`)).json();
-    $("preview").innerHTML='<div class="pmeta">'+esc(CUR.label)+'　<span style="color:#57606a;font-weight:400">共 '+CUR.chars+' 字符'+(expand?"（已展开全文）":"（预览前 1800 字，可点「展开题面全文」）")+'</span></div>'+esc(d.text);
-    $("preview").classList.toggle("expanded",!!expand);
-  }catch(e){ $("preview").textContent="题面读取失败："+e.message; }
+    const d=await(await api(`/api/shiti-detail?file=${encodeURIComponent(file)}&max_chars=${expand?200000:1600}`)).json();
+    $("preview").innerHTML='<span class="cap">'+esc(state.cur.label)+'</span>'
+      +esc(d.text)+'\n\n'+ (expand?"（已展开全文）":"（预览前 1600 字）");
+  }catch(e){$("preview").textContent="题面读取失败："+e.message}
 }
 $("year").addEventListener("change",fillShitiSelect);
 $("shitiSel").addEventListener("change",()=>loadPreview(false));
-$("goFull").onclick=()=>loadPreview(true);
+$("goFull").addEventListener("click",()=>loadPreview(true));
 
-// ───────────────────────── ① 赛题分析（SSE 实时进度）─────────────────────────
-function push(kind,text){
-  const el=document.createElement("div");
-  el.className="ev-"+kind; el.textContent=text; $("log").appendChild(el); $("log").scrollTop=$("log").scrollHeight;
+// ── 分析：按步显示（01 / 02 / 03 列号做排版）──
+function step(no,text,cls){
+  const row=document.createElement("div"); row.className="row";
+  row.innerHTML=`<span class="no">${no}</span><span class="${cls||""}">${esc(text)}</span>`;
+  $("log").appendChild(row); $("log").scrollTop=$("log").scrollHeight;
 }
-async function runAnalyze(useLLM){
-  const btn=$("goAnalyze"); btn.disabled=true; $("log").textContent=""; $("analyzeOut").innerHTML="";
-  if(!CUR){ $("analyzeStatus").textContent="请先选一道题"; btn.disabled=false; return; }
-  $("analyzeStatus").textContent="运行中（"+CUR.label+"）…";
+$("goAnalyze").addEventListener("click",async()=>{
+  if(!state.cur){$("analyzeStatus").textContent="请先选择题目";return}
+  const btn=$("goAnalyze"); btn.disabled=true;
+  $("log").innerHTML=""; $("analyzeOut").innerHTML="";
+  $("analyzeStatus").textContent="运行中";
+  let stepNo=0;
   try{
     const resp=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({domain:$("domain").value,file:CUR.file,label:CUR.label,
-                           steps:+$("steps").value,use_llm:useLLM})});
-    if(!resp.ok) throw new Error(await resp.text());
-    const reader=resp.body.getReader(), dec=new TextDecoder(); let buf="";
+      body:JSON.stringify({domain:state.domain.id,file:state.cur.file,label:state.cur.label,
+                           steps:state.steps,use_llm:!state.demo})});
+    if(!resp.ok) throw new Error((await resp.text()).slice(0,200));
+    const rd=resp.body.getReader(),dec=new TextDecoder();let buf="";
     while(true){
-      const {value,done}=await reader.read(); if(done) break;
+      const {value,done}=await rd.read(); if(done)break;
       buf+=dec.decode(value,{stream:true});
-      let parts=buf.split("\n\n"); buf=parts.pop();
+      const parts=buf.split("\n\n"); buf=parts.pop();
       for(const part of parts){
-        if(!part.startsWith("data: ")) continue;
+        if(!part.startsWith("data: "))continue;
         const ev=JSON.parse(part.slice(6));
-        if(ev.kind==="step") push("step","── 第 "+ev.n+" 步：问模型 ──");
-        else if(ev.kind==="tool") push("tool","   🔧 调用工具 "+ev.name+"（"+JSON.stringify(ev.args).slice(0,120)+"）");
-        else if(ev.kind==="tool_result") push("tool_result","   ↳ 结果 "+ev.chars+" 字符");
-        else if(ev.kind==="log") push("log",ev.text);
-        else if(ev.kind==="error") push("error","❌ "+ev.text);
+        if(ev.kind==="step"){ stepNo=ev.n; step(String(ev.n).padStart(2,"0"),"开始第 "+ev.n+" 步："+ (ev.n===1?"读题与检索":"继续推理")); }
+        else if(ev.kind==="tool") step("·","调用工具 "+ev.name+"（"+JSON.stringify(ev.args).slice(0,110)+"）","ev-tool");
+        else if(ev.kind==="tool_result") step("·","返回 "+ev.chars+" 字符");
+        else if(ev.kind==="log") step("·",ev.text);
+        else if(ev.kind==="error") step("!","出错："+ev.text,"ev-error");
         else if(ev.kind==="usage") $("analyzeStatus").textContent="用量 "+ev.total_tokens+" tokens";
-        else if(ev.kind==="prompt"){
-          $("analyzeOut").innerHTML="<details open><summary>将要发给模型的提示词（演示模式）</summary><pre>"+
-            esc("【System】\n"+ev.system+"\n\n【Task】\n"+ev.task)+"</pre></details>";
-        }
-        else if(ev.kind==="answer" && ev.answer){
-          push("answer","── 最终回答 ──");
-          $("analyzeOut").innerHTML="<div>"+mdToHtml(ev.answer)+"</div>";
+        else if(ev.kind==="prompt") $("analyzeOut").innerHTML=
+          "<h3>将发给模型的内容</h3><div class='readout tall'>"+esc("【System】\n"+ev.system+"\n\n【Task】\n"+ev.task)+"</div>";
+        else if(ev.kind==="answer"&&ev.answer){
+          step("✓","完成","ev-answer");
+          $("analyzeOut").innerHTML="<h3>分析结果</h3>"+md(ev.answer);
         }
         else if(ev.kind==="done"){ $("analyzeStatus").textContent+=" · 完成"; loadFiles(); }
       }
     }
-  }catch(e){ push("error","请求失败："+e.message); }
-  finally{ btn.disabled=false; }
-}
-$("goAnalyze").onclick=()=>runAnalyze(true);
-$("goDemo").onclick=()=>runAnalyze(false);
-$("domain").addEventListener("change",loadShitiList);
+  }catch(e){ step("!","请求失败："+e.message,"ev-error") }
+  finally{ btn.disabled=false }
+});
 
-// ───────────────────────── ② 调参助手 ─────────────────────────
-$("goSample").onclick=async()=>{
+// ── 调参助手（仅电赛）──
+$("goSample").addEventListener("click",async()=>{
   $("tuneStatus").textContent="正在取示例数据…";
   const r=await api("/api/file/step-response-sample.csv"); const blob=await r.blob();
-  const f=new File([blob],"step-response-sample.csv",{type:"text/csv"});
-  const dt=new DataTransfer(); dt.items.add(f); $("file").files=dt.files;
-  $("target").value="1.0"; $("tuneStatus").textContent="已装入示例数据，点「分析数据」";
-};
-$("goTune").onclick=async()=>{
+  const dt=new DataTransfer(); dt.items.add(new File([blob],"step-response-sample.csv",{type:"text/csv"}));
+  $("file").files=dt.files; $("target").value="1.0"; $("tuneStatus").textContent="已装入示例数据";
+});
+$("goTune").addEventListener("click",async()=>{
   const f=$("file").files[0];
-  if(!f){ $("tuneStatus").textContent="请先选文件（或点「用自带示例数据」）"; return; }
-  $("goTune").disabled=true; $("tuneStatus").textContent="计算中…"; $("tuneOut").innerHTML="";
+  if(!f){$("tuneStatus").textContent="请先选择文件";return}
+  const b=$("goTune"); b.disabled=true; $("tuneStatus").textContent="计算中…"; $("tuneOut").innerHTML="";
   try{
-    const fd=new FormData(); fd.append("file",f);
-    fd.append("target",$("target").value); fd.append("use_llm",$("useLLM").checked?"true":"false");
-    const r=await api("/api/tune",{method:"POST",body:fd}); const d=await r.json();
-    let html="<div>"+mdToHtml(d.metrics_md)+"</div>";
-    if(d.plot) html+="<h3>曲线图</h3><img src='/api/file/"+encodeURIComponent(d.plot)+"?t="+Date.now()+"' alt='阶跃响应曲线' />";
-    if(d.report_md) html+="<h3>调参报告</h3><div class='row'><a href='/api/file/"+encodeURIComponent(d.report_md)+"' target='_blank'>预览 Markdown</a>"
-      +(d.report_docx?" · <a href='/api/file/"+encodeURIComponent(d.report_docx)+"'>下载 Word</a>":"")+"</div>";
+    const fd=new FormData(); fd.append("file",f); fd.append("target",$("target").value);
+    fd.append("use_llm",$("useLLM").checked?"true":"false");
+    const d=await(await api("/api/tune",{method:"POST",body:fd})).json();
+    let html=md(d.metrics_md);
+    if(d.plot) html+="<h3>曲线</h3><img class='chart' src='/api/file/"+encodeURIComponent(d.plot)+"?t="+Date.now()+"' alt='阶跃响应曲线'>";
+    if(d.report_md) html+="<h3>调参报告</h3><p><a href='/api/file/"+encodeURIComponent(d.report_md)+"' target='_blank'>预览 Markdown</a>"
+      +(d.report_docx?"　<a href='/api/file/"+encodeURIComponent(d.report_docx)+"'>下载 Word</a>":"")+"</p>";
     $("tuneOut").innerHTML=html;
-    $("tuneStatus").textContent="完成（数据已存：out/uploads/"+d.saved_data+"）";
+    $("tuneStatus").textContent="完成";
     loadFiles();
-  }catch(e){ $("tuneStatus").textContent="失败："+e.message; }
-  finally{ $("goTune").disabled=false; }
-};
+  }catch(e){$("tuneStatus").textContent="失败："+e.message}
+  finally{b.disabled=false}
+});
 
-// ───────────────────────── ③ 成果库 ─────────────────────────
+// ── 成果库 ──
 async function loadFiles(){
   try{
-    const d=await (await api("/api/reports")).json();
+    const d=await(await api("/api/reports")).json();
     $("filesStatus").textContent="共 "+d.items.length+" 个文件";
     $("files").innerHTML=d.items.map(x=>{
-      const tag=x.kind==="docx"?"Word":x.kind==="png"?"图片":x.kind==="md"?"Markdown":x.kind;
-      const view=(x.kind==="md")?`<a href="#" data-md="${esc(x.name)}">预览</a> · `:"";
-      const img=(x.kind==="png")?`<a href="#" data-img="${esc(x.name)}">查看</a> · `:"";
-      return `<li><span><span class="tag">${tag}</span>${esc(x.name)}</span>
-        <span class="meta">${(x.size/1024).toFixed(1)} KB · ${x.mtime} · ${view}${img}
-        <a href="/api/file/${encodeURIComponent(x.name)}">下载</a></span></li>`;
-    }).join("") || "<li class='meta'>还没有产物，先去上面跑一次吧</li>";
-  }catch(e){ $("filesStatus").textContent="列表失败："+e.message; }
+      const kind=x.kind==="docx"?"Word":x.kind==="png"?"图片":x.kind==="md"?"Markdown":x.kind;
+      const act=(x.kind==="md"?`<a href="#" data-md="${esc(x.name)}">预览</a>　`:"")
+               +(x.kind==="png"?`<a href="#" data-img="${esc(x.name)}">查看</a>　`:"")
+               +`<a href="/api/file/${encodeURIComponent(x.name)}">下载</a>`;
+      return `<li><span><span class="kind">${kind}</span>${esc(x.name)}</span>
+        <span class="muted">${(x.size/1024).toFixed(1)} KB　${x.mtime}　${act}</span></li>`;
+    }).join("")||"<li class='empty'>还没有产物</li>";
+  }catch(e){$("filesStatus").textContent="列表失败："+e.message}
 }
-$("refresh").onclick=loadFiles;
+$("refresh").addEventListener("click",loadFiles);
 $("files").addEventListener("click",async e=>{
-  const a=e.target.closest("a"); if(!a) return;
-  if(a.dataset.md){ e.preventDefault();
-    const d=await (await api("/api/file-text/"+encodeURIComponent(a.dataset.md))).json();
-    $("tuneOut").innerHTML="<h3>"+esc(a.dataset.md)+"</h3>"+mdToHtml(d.text);
-    window.scrollTo({top:$("tuneOut").offsetTop-60,behavior:"smooth"});
+  const a=e.target.closest("a"); if(!a)return;
+  if(a.dataset.md){e.preventDefault();
+    const d=await(await api("/api/file-text/"+encodeURIComponent(a.dataset.md))).json();
+    $("tuneOut").innerHTML="<h3>"+esc(a.dataset.md)+"</h3>"+md(d.text);
+    switchTab("tune"); window.scrollTo({top:0,behavior:"smooth"});
   }
-  if(a.dataset.img){ e.preventDefault();
-    $("tuneOut").innerHTML="<h3>"+esc(a.dataset.img)+"</h3><img src='/api/file/"+encodeURIComponent(a.dataset.img)+"?t="+Date.now()+"' />";
-    window.scrollTo({top:$("tuneOut").offsetTop-60,behavior:"smooth"});
+  if(a.dataset.img){e.preventDefault();
+    $("tuneOut").innerHTML="<h3>"+esc(a.dataset.img)+"</h3><img class='chart' src='/api/file/"+encodeURIComponent(a.dataset.img)+"?t="+Date.now()+"'>";
+    switchTab("tune"); window.scrollTo({top:0,behavior:"smooth"});
   }
 });
+
+// 支持直接以 #分区 打开
+if(location.hash.length>1){ const id=location.hash.slice(1);
+  const t=setInterval(()=>{ if(state.domains.length){clearInterval(t); if(state.domains.some(x=>x.id===id&&x.implemented)) openDomain(id);} },120); }
 </script>
 </body>
 </html>
