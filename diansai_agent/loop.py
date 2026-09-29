@@ -50,7 +50,7 @@ class Agent:
                 self._log("── 模型给出最终回答，结束 ──")
                 return msg.get("content") or ""
 
-            for tc in tool_calls:
+            for i, tc in enumerate(tool_calls):
                 fn = tc.get("function") or {}
                 name = fn.get("name") or ""
                 raw_args = fn.get("arguments") or "{}"
@@ -62,12 +62,15 @@ class Agent:
                 result = call_tool(name, args)
                 self._log(f"   ↳ 结果 {len(str(result))} 字符")
                 messages.append({
+                    # 少数实现会漏掉 id，这里兜一个，否则整个请求会被 API 判为非法
+                    "tool_call_id": tc.get("id") or f"call_{step}_{i}",
                     "role": "tool",
-                    "tool_call_id": tc.get("id"),
                     "content": str(result)[:12000],  # 工具结果别太长，省 token
                 })
 
         self._log("⚠️ 达到最大步数，强制收尾")
         messages.append({"role": "user", "content": "请基于已有信息直接给出最终报告，不要再调用工具。"})
         msg = self.llm.chat(messages)
+        for k in self.usage_total:  # 收尾那一次调用也要计入
+            self.usage_total[k] += (msg.get("_usage") or {}).get(k, 0)
         return msg.get("content") or ""

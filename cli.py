@@ -38,8 +38,8 @@ def cmd_check(cfg: Config) -> int:
     print("API Key 来源：", cfg.key_source())
     print("Base URL    ：", cfg.base_url)
     print("模型（默认）：", cfg.model)
-    print("输出目录    ：", cfg.out_dir if hasattr(cfg, "out_dir") else REPO_ROOT / "out")
-    print("\n── 本地真题库 ──")
+    print("输出目录    ：", REPO_ROOT / "out")
+    print("\n── 本地题库 ──")
     print(list_shiti())
     if not cfg.has_key:
         print("\n❌ 没找到 API Key：请设置环境变量 DEEPSEEK_API_KEY，或在仓库根目录建 .env（见 .env.example）")
@@ -80,8 +80,9 @@ def cmd_analyze(cfg: Config, name: str, steps: int, dry_run: bool) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="电赛 Agent v0.1")
-    ap.add_argument("--check", action="store_true", help="检查配置与真题库，不调用模型")
+    ap = argparse.ArgumentParser(description="电赛 Agent v0.1 —— 把赛题变成作战方案")
+    ap.add_argument("--version", action="version", version="diansai-agent 0.1.0")
+    ap.add_argument("--check", action="store_true", help="检查配置与题库，不调用模型")
     ap.add_argument("--model", help="临时指定模型名（覆盖 .env）")
     sub = ap.add_subparsers(dest="cmd")
 

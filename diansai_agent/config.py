@@ -69,6 +69,10 @@ class Config:
             or env_file.get("DEEPSEEK_MODEL")
             or DEFAULT_MODEL
         )
+        # 题库位置也可以写在 .env 里（tools/shiti.py 会读这个环境变量）
+        kb = os.environ.get("DIANSAI_KB") or env_file.get("DIANSAI_KB")
+        if kb:
+            os.environ["DIANSAI_KB"] = kb
         OUT_DIR.mkdir(exist_ok=True)
 
     @property

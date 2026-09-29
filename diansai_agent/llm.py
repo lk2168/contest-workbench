@@ -41,13 +41,14 @@ class LLM:
         return [m.get("id", "") for m in data.get("data", [])]
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
-             temperature: float = 0.3, retries: int = 2) -> dict:
-        """一次对话调用。返回 assistant 消息（可能带 tool_calls）。"""
-        payload: dict = {
-            "model": self.cfg.model,
-            "messages": messages,
-            "temperature": temperature,
-        }
+             temperature: float | None = 0.3, retries: int = 2) -> dict:
+        """一次对话调用。返回 assistant 消息（可能带 tool_calls）。
+
+        temperature=None 时不发这个字段 —— 有些模型（推理型）不接受自定义温度。
+        """
+        payload: dict = {"model": self.cfg.model, "messages": messages}
+        if temperature is not None:
+            payload["temperature"] = temperature
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"

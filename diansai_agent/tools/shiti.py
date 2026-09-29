@@ -40,12 +40,17 @@ def _is_builtin(p: Path) -> bool:
 
 
 def _dedupe(files: list[Path]) -> list[Path]:
-    """同名文件只留一份（内置题库优先）——避免同一道题被数两遍。"""
-    best: dict[str, Path] = {}
+    """同一道题只留一份（内置题库优先）。
+
+    去重键用「年份目录 + 文件名」：**不能只用文件名** —— 不同年份会有同名文件
+    （例如每年都可能有《答疑汇总.md》），只用文件名会把别的年份误删。
+    """
+    best: dict[tuple[str, str], Path] = {}
     for p in files:
-        cur = best.get(p.stem)
+        key = (p.parent.name, p.stem)
+        cur = best.get(key)
         if cur is None or (_is_builtin(p) and not _is_builtin(cur)):
-            best[p.stem] = p
+            best[key] = p
     return sorted(best.values(), key=lambda p: (p.parent.name, p.stem), reverse=True)
 
 
@@ -122,9 +127,15 @@ def read_shiti(name: str, max_chars: int = 8000) -> str:
     total = len(text)
     if total > max_chars:
         text = text[:max_chars] + f"\n\n……（已截断，原文 {total} 字符）"
-    same = [q.parent.name for q in _all_md()
-            if re.match(rf"^{re.match(r'([A-Za-z])', p.stem).group(1)}\s*题", q.stem) and q != p]
-    tip = f"\n（提示：其它年份也有同题号的题：{', '.join(same)}）" if same else ""
+    # 提示其它年份的同题号题目（注意：文件名不一定以字母开头，这里要防御性判断）
+    m = re.match(r"([A-Za-z])", p.stem)
+    same: list[str] = []
+    if m:
+        code = m.group(1)
+        for q in _all_md():
+            if q != p and re.match(rf"^{code}\s*题", q.stem):
+                same.append(q.parent.name)
+    tip = f"\n（提示：其它年份也有 {code} 题：{', '.join(same)}）" if same else ""
     return f"【{p.parent.name} · {p.stem}】{tip}\n{text}"
 
 
