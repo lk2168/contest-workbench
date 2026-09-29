@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from .shiti import list_shiti, read_shiti, search_qa
+from .shiti import list_shiti, read_shiti, search_qa, search_tiku
 from .report import write_report
 
 # 工具名 -> 执行函数
@@ -16,6 +16,7 @@ _FUNCS = {
     "list_shiti": lambda **kw: list_shiti(**kw),
     "read_shiti": lambda **kw: read_shiti(**kw),
     "search_qa": lambda **kw: search_qa(**kw),
+    "search_tiku": lambda **kw: search_tiku(**kw),
     "write_report": lambda **kw: write_report(**kw),
 }
 
@@ -54,6 +55,21 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "keyword": {"type": "string", "description": "关键词，如 '摆杆' 或 'H题'"},
                     "max_chars": {"type": "integer", "description": "最多返回多少字符，默认 4000"},
+                },
+                "required": ["keyword"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_tiku",
+            "description": "跨年份检索整个题库（历年赛题正文 + 答疑 + 历年规律文档）。分析今年这道题前，用它看看往年考过什么类似的、当时是什么技术路线。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "关键词，如 '摄像头'、'PID'、'无线'、'循迹'、'摆杆'"},
+                    "max_chars": {"type": "integer", "description": "最多返回多少字符，默认 6000"},
                 },
                 "required": ["keyword"],
             },
