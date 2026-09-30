@@ -52,6 +52,10 @@ jobs:
       - name: 启动器（端口避让 / 日志兜底 / 窗口能力探测）
         run: python tests/test_launcher.py
 
+      # 追问（多轮对话）与多供应商：用**假 LLM** 离线验证"上下文真的带上了"
+      - name: 追问与供应商（离线，假 LLM）
+        run: python tests/test_ask.py
+
       - name: 命令行空跑（不调用模型）
         run: |
           python cli.py --version

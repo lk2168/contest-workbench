@@ -38,6 +38,89 @@ BUNDLE_ROOT = BUNDLE_DIR     # 随包资源（prompts / static）
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-flash"  # 本机实测可用：deepseek-flash / deepseek-v4-pro
 
+# ── 模型供应商目录 ────────────────────────────────────────────────────────────
+# ★ 本项目的模型调用层本来就是通用 OpenAI 兼容格式（只打 /chat/completions），
+#   所以"只支持 DeepSeek"是配置层的限制，不是能力限制 —— 这里把它打开：
+#   任何 OpenAI 兼容接口（含本地 Ollama）都能用，只要改 base_url + Key + 模型名。
+#
+# 关于模型名：**不预设**各家的模型名（各平台改名很频繁，写死在代码里很快就会过期）。
+# 做法是让用户在设置里点「拉取可用模型」—— 直接问对方的 /models 接口拿真实列表。
+PROVIDERS: dict[str, dict] = {
+    "deepseek": {
+        "name": "DeepSeek（官方）",
+        "base_url": "https://api.deepseek.com",
+        "key_env": "DEEPSEEK_API_KEY",
+        "signup": "https://platform.deepseek.com/api_keys",
+        "default_model": "deepseek-flash",
+        "note": "本机实测可用：deepseek-flash（便宜快）/ deepseek-v4-pro（更强）",
+        "needs_key": True,
+    },
+    "moonshot": {
+        "name": "月之暗面 Kimi",
+        "base_url": "https://api.moonshot.cn/v1",
+        "key_env": "MOONSHOT_API_KEY",
+        "signup": "https://platform.moonshot.cn/console/api-keys",
+        "default_model": "",
+        "note": "点「拉取可用模型」拿到你账号里的模型名",
+        "needs_key": True,
+    },
+    "dashscope": {
+        "name": "阿里通义千问（DashScope 兼容模式）",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "key_env": "DASHSCOPE_API_KEY",
+        "signup": "https://bailian.console.aliyun.com/",
+        "default_model": "",
+        "note": "用兼容模式地址即可，模型名如 qwen-*（以拉取结果为准）",
+        "needs_key": True,
+    },
+    "zhipu": {
+        "name": "智谱 GLM",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "key_env": "ZHIPUAI_API_KEY",
+        "signup": "https://open.bigmodel.cn/usercenter/apikeys",
+        "default_model": "",
+        "note": "",
+        "needs_key": True,
+    },
+    "siliconflow": {
+        "name": "硅基流动 SiliconFlow（聚合多家开源模型）",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "key_env": "SILICONFLOW_API_KEY",
+        "signup": "https://cloud.siliconflow.cn/account/ak",
+        "default_model": "",
+        "note": "一个 Key 用多家模型，适合做对比",
+        "needs_key": True,
+    },
+    "openai": {
+        "name": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "key_env": "OPENAI_API_KEY",
+        "signup": "https://platform.openai.com/api-keys",
+        "default_model": "",
+        "note": "国内直连通常不通，需要代理",
+        "needs_key": True,
+    },
+    "ollama": {
+        "name": "本地 Ollama（免费、数据不出本机）",
+        "base_url": "http://localhost:11434/v1",
+        "key_env": "",
+        "signup": "https://ollama.com/download",
+        "default_model": "",
+        "note": "先装 Ollama 并 `ollama pull <模型>`；Key 随便填 ollama（本机不校验）",
+        "needs_key": False,
+    },
+    "custom": {
+        "name": "自定义（任何 OpenAI 兼容接口）",
+        "base_url": "",
+        "key_env": "CONTEST_API_KEY",
+        "signup": "",
+        "default_model": "",
+        "note": "填你自己的 base_url（要带 /v1 之类的版本段，程序会拼 /chat/completions）",
+        "needs_key": True,
+    },
+}
+DEFAULT_PROVIDER = "deepseek"
+
 
 def env_first(*names: str, default: str = "") -> str:
     """按顺序取第一个非空环境变量。
@@ -131,7 +214,7 @@ def _load_dotenv(path: Path) -> dict:
 
 
 def save_user_config(api_key: str | None = None, model: str | None = None,
-                     base_url: str | None = None) -> Path:
+                     base_url: str | None = None, provider: str | None = None) -> Path:
     """把设置写进用户配置文件（保留文件里其它键）。
 
     只写非 None 的项；传空字符串表示"清空该项"。
@@ -139,6 +222,8 @@ def save_user_config(api_key: str | None = None, model: str | None = None,
     """
     path = user_env_file()
     data = _load_dotenv(path)
+    if provider is not None:
+        data["CONTEST_PROVIDER"] = provider.strip()
     if api_key is not None:
         data["DEEPSEEK_API_KEY"] = api_key.strip()
     if model is not None:
@@ -172,28 +257,46 @@ def _load_dsh_key() -> str | None:
 
 
 class Config:
-    def __init__(self) -> None:
+    """运行配置。★ 支持任意 OpenAI 兼容供应商（见 PROVIDERS），不再只认 DeepSeek。
+
+    字段来源优先级：环境变量 → 用户配置文件（界面里刚填的）→ 仓库 .env → DSH 凭据 / 供应商默认值。
+    """
+
+    def __init__(self, provider: str | None = None) -> None:
         env_file = _load_dotenv(REPO_ROOT / ".env")
         user_file = _load_dotenv(user_env_file())
-        self.api_key = (
-            os.environ.get("DEEPSEEK_API_KEY")
-            or user_file.get("DEEPSEEK_API_KEY")      # ★ 界面上填的优先于仓库 .env
-            or env_file.get("DEEPSEEK_API_KEY")
-            or _load_dsh_key()
-            or ""
-        )
-        self.base_url = (
-            os.environ.get("DEEPSEEK_BASE_URL")
-            or user_file.get("DEEPSEEK_BASE_URL")
-            or env_file.get("DEEPSEEK_BASE_URL")
-            or DEFAULT_BASE_URL
-        ).rstrip("/")
-        self.model = (
-            os.environ.get("DEEPSEEK_MODEL")
-            or user_file.get("DEEPSEEK_MODEL")
-            or env_file.get("DEEPSEEK_MODEL")
-            or DEFAULT_MODEL
-        )
+
+        def pick(key: str, *env_names: str) -> str:
+            for n in env_names:
+                v = os.environ.get(n)
+                if v:
+                    return v
+            return (user_file.get(key) or env_file.get(key) or "")
+
+        # ① 供应商：显式参数 > 环境变量 > 配置文件 > 默认
+        self.provider = (provider
+                         or env_first("CONTEST_PROVIDER")
+                         or user_file.get("CONTEST_PROVIDER")
+                         or env_file.get("CONTEST_PROVIDER")
+                         or DEFAULT_PROVIDER).strip().lower()
+        if self.provider not in PROVIDERS:
+            self.provider = DEFAULT_PROVIDER
+        prof = PROVIDERS[self.provider]
+
+        # ② Key：先看该供应商专属的 Key 环境变量，再退回通用字段
+        key_names = [n for n in (prof.get("key_env"), "CONTEST_API_KEY") if n]
+        self.api_key = pick("DEEPSEEK_API_KEY", *key_names) or ""
+        if not self.api_key and self.provider == DEFAULT_PROVIDER:
+            self.api_key = _load_dsh_key() or ""     # 只对默认供应商兜底读 DSH 凭据
+
+        # ③ base_url：自定义供应商必须自己填
+        self.base_url = (pick("DEEPSEEK_BASE_URL", "CONTEST_BASE_URL")
+                         or prof.get("base_url") or DEFAULT_BASE_URL).rstrip("/")
+
+        # ④ 模型
+        self.model = (pick("DEEPSEEK_MODEL", "CONTEST_MODEL")
+                      or prof.get("default_model") or DEFAULT_MODEL)
+
         # 题库位置也可以写在配置文件里（tools/shiti.py 会读这个环境变量）
         # 兼容改名前的 DIANSAI_KB
         kb = (env_first("CONTEST_KB", "DIANSAI_KB")
@@ -207,7 +310,14 @@ class Config:
             pass
 
     @property
+    def provider_name(self) -> str:
+        return PROVIDERS.get(self.provider, {}).get("name", self.provider)
+
+    @property
     def has_key(self) -> bool:
+        # 本地 Ollama 之类不需要 Key 的供应商不算"缺 Key"
+        if not PROVIDERS.get(self.provider, {}).get("needs_key", True):
+            return True
         return bool(self.api_key.strip())
 
     def masked_key(self) -> str:
@@ -221,12 +331,18 @@ class Config:
 
     def key_source(self) -> str:
         """告诉用户 Key 是从哪来的（不泄露 Key 本身）。"""
-        if os.environ.get("DEEPSEEK_API_KEY"):
-            return "环境变量 DEEPSEEK_API_KEY"
-        if _load_dotenv(user_env_file()).get("DEEPSEEK_API_KEY"):
+        prof = PROVIDERS.get(self.provider, {})
+        if not prof.get("needs_key", True):
+            return f"{self.provider_name}：不需要 Key"
+        names = [n for n in (prof.get("key_env"), "CONTEST_API_KEY") if n]
+        for n in names:
+            if os.environ.get(n):
+                return f"环境变量 {n}"
+        uf = _load_dotenv(user_env_file())
+        if uf.get("DEEPSEEK_API_KEY"):
             return f"用户配置文件（{user_env_file()}）"
         if _load_dotenv(REPO_ROOT / ".env").get("DEEPSEEK_API_KEY"):
             return "仓库 .env 文件"
-        if _load_dsh_key():
+        if self.provider == DEFAULT_PROVIDER and _load_dsh_key():
             return "DSH 凭据文件（~/.dsh/.credentials.yaml）"
         return "未找到"

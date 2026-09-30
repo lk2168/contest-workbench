@@ -16,15 +16,18 @@ import re
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
-from ..config import OUT_DIR, REPO_ROOT, Config, save_user_config, user_env_file
+from ..config import (OUT_DIR, PROVIDERS, REPO_ROOT, Config, save_user_config,
+                      user_env_file)
 from ..domains import DOMAINS, get_domain, list_domains, prompt_text
 from ..llm import LLM
 from ..loop import Agent
+from ..sessions import SESSIONS
 from ..tools import ERROR_PREFIX, TOOL_SCHEMAS, call_tool, is_error
 from ..tools.shiti import list_shiti, list_shiti_structured
 
@@ -210,13 +213,17 @@ def api_analyze(payload: dict) -> StreamingResponse:
 
     # 目标描述：带上年份/批次，报告与提示词里都不会再有歧义
     target_desc = label or (f"{file}" if file else f"题号/关键词「{name}」")
+    sid = uuid.uuid4().hex[:12]
 
     def gen():
         def send(obj):
             return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
+        # ★ 先把会话 id 告诉前端：跑完就能拿它继续追问
+        yield send({"kind": "session", "sid": sid, "label": target_desc})
+
         if not use_llm or not cfg.has_key:
-            why = "演示模式（未调用模型）" if use_llm is False else "未找到 API Key"
+            why = "演示模式（未调用模型）" if use_llm is False else "未配置模型 Key"
             yield send({"kind": "log", "text": f"⚠️ {why}：本次只展示将要发给模型的提示词。"})
             system = prompt_text(d, "system")
             task = _build_task(d, target_desc, file, name)
@@ -230,10 +237,64 @@ def api_analyze(payload: dict) -> StreamingResponse:
             try:
                 agent = Agent(LLM(cfg), prompt_text(d, "system"), max_steps=steps,
                               verbose=False, on_event=q.put)
-                answer = agent.run(_build_task(d, target_desc, file, name))
+                task = _build_task(d, target_desc, file, name)
+                answer = agent.run(task)
+                SESSIONS.start(sid, domain, task, answer, {"label": target_desc})
                 q.put({"kind": "usage", **agent.usage_total})
                 q.put({"kind": "done", "answer": answer})
             except Exception as e:               # 任何异常都要让前端看到，不能静默
+                q.put({"kind": "error", "text": f"{type(e).__name__}: {e}"})
+                q.put({"kind": "done", "answer": ""})
+
+        threading.Thread(target=worker, daemon=True).start()
+        while True:
+            ev = q.get()
+            yield send(ev)
+            if ev.get("kind") == "done":
+                break
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/ask")
+def api_ask(payload: dict) -> StreamingResponse:
+    """**追问**：接着上一次分析继续问（SSE 流式，事件格式与 /api/analyze 一致）。
+
+    模型在这轮里**仍然带工具**，所以它可以回去再读题面 / 检索答疑，而不是只凭记忆回答。
+    """
+    sid = ((payload or {}).get("sid") or "").strip()
+    question = ((payload or {}).get("question") or "").strip()
+    steps = int((payload or {}).get("steps", 8))
+    if not question:
+        raise HTTPException(status_code=400, detail="请先写问题")
+    sess = SESSIONS.get(sid)
+    if not sess:
+        raise HTTPException(status_code=400,
+                            detail="这个会话已过期或不存在 —— 请先做一次分析，再追问")
+    d = _domain_or_400(sess.get("domain", "diansai"))
+    cfg = Config()
+    if not cfg.has_key:
+        raise HTTPException(status_code=400, detail="还没有配置模型 Key，无法追问")
+
+    system = prompt_text(d, "system")
+    messages = SESSIONS.messages(sid, system, question)
+
+    def gen():
+        def send(obj):
+            return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+        yield send({"kind": "question", "text": question})
+        q: queue.Queue = queue.Queue()
+
+        def worker():
+            try:
+                agent = Agent(LLM(cfg), system, max_steps=steps, verbose=False, on_event=q.put)
+                answer = agent.run(messages=messages)
+                SESSIONS.add_turn(sid, question, answer)
+                q.put({"kind": "usage", **agent.usage_total})
+                q.put({"kind": "done", "answer": answer})
+            except Exception as e:
                 q.put({"kind": "error", "text": f"{type(e).__name__}: {e}"})
                 q.put({"kind": "done", "answer": ""})
 
@@ -333,10 +394,46 @@ def api_settings_get() -> JSONResponse:
         "masked_key": cfg.masked_key(),
         "model": cfg.model,
         "base_url": cfg.base_url,
+        "provider": cfg.provider,
+        "provider_name": cfg.provider_name,
         "config_file": str(user_env_file()),
         "out_dir": str(OUT_DIR),
         "model_options": MODEL_OPTIONS,
     })
+
+
+@app.get("/api/settings/providers")
+def api_providers() -> JSONResponse:
+    """可选的模型供应商目录（任何 OpenAI 兼容接口都能接，含本地 Ollama）。"""
+    return JSONResponse({"providers": [{"id": k, **v} for k, v in PROVIDERS.items()],
+                         "current": Config().provider})
+
+
+@app.post("/api/settings/models")
+def api_provider_models(payload: dict) -> JSONResponse:
+    """按指定供应商（或当前配置）拉一次可用模型列表 —— 不预设模型名，直接问对方。"""
+    p = (payload or {}).get("provider") or Config().provider
+    if p not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"未知供应商：{p}")
+    prof = PROVIDERS[p]
+    base = ((payload or {}).get("base_url") or prof.get("base_url") or "").strip()
+    if not base:
+        raise HTTPException(status_code=400, detail="这个供应商需要你自己填 base_url")
+    key = ((payload or {}).get("api_key") or "").strip() or Config(provider=p).api_key
+    if prof.get("needs_key", True) and not key:
+        raise HTTPException(status_code=400, detail="请先填 Key（本地 Ollama 可随便填 ollama）")
+    try:
+        import requests as _rq
+        r = _rq.get(f"{base.rstrip('/')}/models",
+                    headers={"Authorization": f"Bearer {key or 'ollama'}"}, timeout=30)
+        if r.status_code != 200:
+            return JSONResponse({"ok": False, "error": f"HTTP {r.status_code}：{r.text[:200]}"})
+        data = r.json()
+        models = [m.get("id", "") for m in (data.get("data") or []) if m.get("id")]
+        return JSONResponse({"ok": bool(models), "models": sorted(models)[:200],
+                             "count": len(models)})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
 
 @app.post("/api/settings")
@@ -347,21 +444,30 @@ def api_settings_post(payload: dict) -> JSONResponse:
     打包成 exe 后程序目录可能不可写，所以设置一律存用户目录。
     """
     p = payload or {}
-    unknown = set(p) - {"api_key", "model", "base_url"}
+    allowed = {"api_key", "model", "base_url", "provider"}
+    unknown = set(p) - allowed
     if unknown:
         raise HTTPException(status_code=400, detail=f"不认识的设置项：{', '.join(sorted(unknown))}")
+    if "provider" in p and p["provider"] and p["provider"] not in PROVIDERS:
+        raise HTTPException(status_code=400,
+                            detail=f"未知供应商 {p['provider']}，可用：{', '.join(PROVIDERS)}")
     key = p.get("api_key")
-    if key is not None and key.strip() and not key.strip().startswith("sk-"):
-        # 只做最基础的形状检查，真正能不能用要靠「测试连接」
-        raise HTTPException(status_code=400, detail="API Key 看起来不对（通常以 sk- 开头）")
+    prof = PROVIDERS.get(p.get("provider") or Config().provider, {})
+    if (key is not None and key.strip() and prof.get("needs_key", True)
+            and prof.get("key_env") == "DEEPSEEK_API_KEY"
+            and not key.strip().startswith("sk-")):
+        # 只对默认供应商做形状检查，其它家前缀各不相同，别乱判
+        raise HTTPException(status_code=400, detail="DeepSeek 的 Key 通常以 sk- 开头，请检查")
     try:
-        path = save_user_config(api_key=key, model=p.get("model"), base_url=p.get("base_url"))
+        path = save_user_config(api_key=key, model=p.get("model"),
+                                base_url=p.get("base_url"), provider=p.get("provider"))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"写入配置失败：{type(e).__name__}: {e}")
     cfg = Config()
     return JSONResponse({"saved_to": str(path), "has_key": cfg.has_key,
                          "key_source": cfg.key_source(), "masked_key": cfg.masked_key(),
-                         "model": cfg.model, "base_url": cfg.base_url})
+                         "model": cfg.model, "base_url": cfg.base_url,
+                         "provider": cfg.provider, "provider_name": cfg.provider_name})
 
 
 @app.post("/api/settings/test")
@@ -369,16 +475,18 @@ def api_settings_test() -> JSONResponse:
     """用当前 Key 真连一次模型列表，验证可用性（会消耗极少网络请求，不花 token）。"""
     cfg = Config()
     if not cfg.has_key:
-        return JSONResponse({"ok": False, "error": "还没填 API Key"})
+        return JSONResponse({"ok": False, "error": f"{cfg.provider_name}：还没填 Key"})
     try:
         models = LLM(cfg).list_models()
         ok = bool(models)
         warn = ""
         if ok and cfg.model not in models:
             warn = f"当前模型 {cfg.model} 不在可用列表里，建议改成 {models[0]}"
-        return JSONResponse({"ok": ok, "models": models, "current_model": cfg.model, "warning": warn})
+        return JSONResponse({"ok": ok, "models": models, "current_model": cfg.model,
+                             "provider": cfg.provider, "warning": warn})
     except Exception as e:
-        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"})
+        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}",
+                             "provider": cfg.provider})
 
 
 @app.get("/api/selftest")

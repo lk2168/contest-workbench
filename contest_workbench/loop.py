@@ -54,12 +54,20 @@ class Agent:
     def _log(self, msg: str) -> None:
         self._emit("log", text=msg)
 
-    def run(self, task: str) -> str:
-        """跑完一个任务，返回模型的最终回答（文本）。"""
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": task},
-        ]
+    def run(self, task: str = "", messages: list[dict] | None = None) -> str:
+        """跑完一个任务，返回模型的最终回答（文本）。
+
+        messages=None  → 开新对话（system + 本次 task）
+        messages=[...] → **接着已有对话继续**（追问用）：调用方给出 system + 历史 + 新问题，
+                         本方法只负责跑循环（这层不关心谁拼的消息，便于单独测试）。
+
+        跑完把完整消息留在 `self.last_messages`，供上层保存上下文。
+        """
+        if messages is None:
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": task},
+            ]
         self._emit("start", max_steps=self.max_steps)
 
         for step in range(1, self.max_steps + 1):
@@ -71,8 +79,12 @@ class Agent:
 
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
-                self._emit("answer", text=msg.get("content") or "")
-                return msg.get("content") or ""
+                # ★ 同时给 text 与 answer 两个键：text 供终端打印，answer 供网页端渲染。
+                #   之前只发了 text，而前端读 ev.answer → 报告在网页端一直渲染不出来。
+                text = msg.get("content") or ""
+                self._emit("answer", text=text, answer=text)
+                self.last_messages = messages
+                return text
 
             for i, tc in enumerate(tool_calls):
                 fn = tc.get("function") or {}
@@ -98,5 +110,6 @@ class Agent:
         for k in self.usage_total:  # 收尾那一次调用也要计入
             self.usage_total[k] += (msg.get("_usage") or {}).get(k, 0)
         text = msg.get("content") or ""
-        self._emit("answer", text=text)
+        self._emit("answer", text=text, answer=text)
+        self.last_messages = messages
         return text

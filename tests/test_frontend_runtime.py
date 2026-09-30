@@ -122,6 +122,8 @@ def main() -> int:
           "进入分析" in rendered or "现在可用" in rendered)
     check("规划中分区也在列表里（数学建模）", "数学建模" in rendered)
     check("设置抽屉内容存在（运行自检按钮）", "运行自检" in rendered)
+    check("设置抽屉有供应商选择（多模型支持）", "模型供应商" in rendered and "拉取可用模型" in rendered)
+    check("有追问输入框（分析完可以接着问）", "继续追问" in rendered and "askInput" in rendered)
     check("没有 JS 报错字样", "Cannot set properties" not in rendered
           and "undefined is not" not in rendered and "null (setting" not in rendered)
 

@@ -281,23 +281,34 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
   </div>
   <div class="db">
     <div class="line">
-      <label for="apiKey">DeepSeek API Key</label>
+      <label for="providerSel">模型供应商</label>
+      <select id="providerSel" style="width:100%"></select>
+      <span class="hint" id="providerNote">任何 OpenAI 兼容接口都能用（含本地 Ollama）。</span>
+    </div>
+    <div class="line">
+      <label for="apiKey">API Key</label>
       <div class="row" style="gap:var(--s2);align-items:center">
-        <input type="password" id="apiKey" placeholder="sk-……" autocomplete="off" style="flex:1;min-width:150px" />
+        <input type="password" id="apiKey" placeholder="粘贴 Key" autocomplete="off" style="flex:1;min-width:150px" />
         <button class="quiet" id="btnSaveKey">保存</button>
         <button class="quiet" id="btnTest">测试连接</button>
       </div>
       <span class="hint" id="keyStatus">读取中…</span>
-      <span class="hint">在 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a> 申请；
-        保存在本机用户目录，不上传、不进版本库。</span>
+      <span class="hint" id="keySignup"></span>
     </div>
     <div class="line">
-      <label for="modelSel">模型</label>
+      <label for="baseUrl">接口地址（base_url）</label>
+      <input type="text" id="baseUrl" placeholder="https://…/v1" autocomplete="off" style="width:100%" />
+      <span class="hint">换供应商会自动填；自建/代理/本地模型在这里改。程序会在后面拼 <code>/chat/completions</code>。</span>
+    </div>
+    <div class="line">
+      <label for="modelInput">模型</label>
       <div class="row" style="gap:var(--s2);align-items:center">
-        <select id="modelSel" style="flex:1;min-width:150px"></select>
+        <input type="text" id="modelInput" list="modelList" placeholder="填模型名，或点右边拉取" autocomplete="off" style="flex:1;min-width:150px" />
+        <datalist id="modelList"></datalist>
+        <button class="quiet" id="btnFetchModels">拉取可用模型</button>
         <button class="quiet" id="btnSaveModel">保存</button>
       </div>
-      <span class="hint">两个都实测可用；<code>deepseek-flash</code> 便宜快，<code>deepseek-v4-pro</code> 更强更贵。</span>
+      <span class="hint" id="modelHint">不预设各家模型名（平台改名很频繁）——点「拉取可用模型」直接问对方要真实列表。</span>
     </div>
     <div class="line">
       <label for="steps">最多步数</label>
@@ -447,6 +458,20 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
           <div class="body" id="log"><div class="r"><span class="n">—</span><span class="hint">点「开始分析」后，这里按步骤显示 Agent 的动作：调用了哪个工具、返回多少字。</span></div></div>
         </div>
         <div id="analyzeOut"></div>
+        <!-- 追问：分析完可以接着问（模型记得刚才的分析，也还能回去查题面/答疑） -->
+        <div class="card" id="askBox" hidden>
+          <h3 style="margin-bottom:var(--s2)">继续追问</h3>
+          <p class="muted" style="font-size:12.5px;margin-bottom:var(--s3)">
+            模型记得刚才那次分析（也能自己再回去读题面、检索答疑）。适合问"这条要求我怎么满足""器件能换成 XX 吗"这类。
+          </p>
+          <div id="askLog"></div>
+          <div class="row-actions" style="margin-top:var(--s3)">
+            <input type="text" id="askInput" placeholder="例如：第 3 个方案的电机能不能换成 XX？成本多少？"
+                   autocomplete="off" style="flex:1;min-width:200px" />
+            <button class="primary" id="btnAsk">追问</button>
+          </div>
+          <div class="muted" id="askStatus" style="font-size:12.5px;margin-top:var(--s2)"></div>
+        </div>
       </div>
     </div>
 
@@ -530,41 +555,88 @@ const ic=(n,s=16)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 
 const $=id=>document.getElementById(id);
 
-/* ── 设置：读 / 存 / 测 API Key ── */
+/* ── 设置：供应商 / Key / 接口地址 / 模型 / 测试 ── */
+let PROVIDERS=[], CUR_PROVIDER="deepseek";
 async function loadSettings(){
   try{
-    const s=await(await api("/api/settings")).json();
-    $("modelSel").innerHTML=(s.model_options||[]).concat([s.model]).filter((v,i,a)=>v&&a.indexOf(v)===i)
-      .map(m=>`<option value="${esc(m)}" ${m===s.model?"selected":""}>${esc(m)}</option>`).join("");
+    const [s,pv]=await Promise.all([(await api("/api/settings")).json(),
+                                   (await api("/api/settings/providers")).json()]);
+    PROVIDERS=pv.providers||[]; CUR_PROVIDER=s.provider;
+    $("providerSel").innerHTML=PROVIDERS.map(p=>
+      `<option value="${p.id}" ${p.id===s.provider?"selected":""}>${esc(p.name)}</option>`).join("");
+    applyProviderUI(s.provider, s.base_url);
+    $("modelInput").value=s.model||"";
+    $("modelList").innerHTML=(s.model_options||[]).map(m=>`<option value="${esc(m)}"></option>`).join("");
     $("keyStatus").innerHTML = s.has_key
-      ? `已配置：<code>${esc(s.masked_key)}</code>　来源：${esc(s.key_source)}`
+      ? `已配置：<code>${esc(s.masked_key||"（无需 Key）")}</code>　来源：${esc(s.key_source)}`
       : '还没配置。填好 Key 点「保存」，再点「测试连接」验证。';
     $("paths").innerHTML=`配置文件 <code>${esc(s.config_file)}</code><br>输出目录 <code>${esc(s.out_dir)}</code>`;
     $("firstRun").hidden = !!s.has_key;
   }catch(e){ $("keyStatus").textContent="读取设置失败："+e.message }
 }
+function applyProviderUI(id, baseUrl){
+  const p=PROVIDERS.find(x=>x.id===id); if(!p) return;
+  CUR_PROVIDER=id;
+  $("baseUrl").value=baseUrl||p.base_url||"";
+  $("providerNote").textContent=p.note||"";
+  $("keySignup").innerHTML=p.signup
+    ? `申请地址：<a href="${p.signup}" target="_blank" rel="noopener">${esc(p.signup)}</a>（Key 只存本机，不上传）`
+    : "本地模型不需要 Key（可随便填 ollama）。";
+  $("apiKey").placeholder = p.needs_key ? "粘贴 Key" : "本地模型可填 ollama";
+}
+$("providerSel").addEventListener("change",()=>{
+  const p=PROVIDERS.find(x=>x.id===$("providerSel").value);
+  if(p) applyProviderUI(p.id, p.base_url);
+  $("keyStatus").textContent="换供应商了 —— 记得点「保存」（会一并保存供应商与接口地址）";
+});
+async function saveSettings(extra){
+  const body=Object.assign({provider:$("providerSel").value,
+                            base_url:$("baseUrl").value.trim(),
+                            model:$("modelInput").value.trim()}, extra||{});
+  return (await api("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)})).json();
+}
 $("btnSaveKey").addEventListener("click",async()=>{
   const v=$("apiKey").value.trim();
-  if(!v){ $("keyStatus").textContent="请先粘贴 Key"; return }
+  if(!v && (PROVIDERS.find(p=>p.id===CUR_PROVIDER)||{}).needs_key){
+    $("keyStatus").textContent="请先粘贴 Key"; return;
+  }
   $("keyStatus").textContent="保存中…";
   try{
-    const r=await(await api("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({api_key:v})})).json();
+    const r=await saveSettings({api_key:v});
     $("apiKey").value="";
-    $("keyStatus").textContent=`已保存到 ${r.saved_to}　现在可以点「测试连接」`;
+    $("keyStatus").textContent=`已保存到 ${r.saved_to}　当前供应商：${r.provider_name}`;
     await loadSettings();
   }catch(e){ $("keyStatus").textContent="保存失败："+e.message }
 });
 $("btnSaveModel").addEventListener("click",async()=>{
-  $("keyStatus").textContent="保存模型…";
+  $("keyStatus").textContent="保存中…";
   try{
-    await api("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:$("modelSel").value})});
-    $("keyStatus").textContent="模型已保存："+$("modelSel").value;
+    const r=await saveSettings({});
+    $("keyStatus").textContent=`已保存　供应商：${r.provider_name}　模型：${r.model}`;
   }catch(e){ $("keyStatus").textContent="保存失败："+e.message }
 });
+$("btnFetchModels").addEventListener("click",async()=>{
+  const btn=$("btnFetchModels"); btn.disabled=true;
+  $("modelHint").textContent="正在向该供应商拉取模型列表…";
+  try{
+    const r=await(await api("/api/settings/models",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({provider:$("providerSel").value,
+                           base_url:$("baseUrl").value.trim(),
+                           api_key:$("apiKey").value.trim()})})).json();
+    if(r.ok){
+      $("modelList").innerHTML=r.models.map(m=>`<option value="${esc(m)}"></option>`).join("");
+      if(!$("modelInput").value) $("modelInput").value=r.models[0];
+      $("modelHint").innerHTML=`拉到 <b>${r.count}</b> 个模型（点输入框会弹出候选），选定后点「保存」。`;
+    }else{
+      $("modelHint").innerHTML=`<span style="color:#B42318">拉取失败：${esc(r.error||"未知原因")}</span>`;
+    }
+  }catch(e){ $("modelHint").textContent="拉取失败："+e.message }
+  finally{ btn.disabled=false }
+});
 $("btnTest").addEventListener("click",async()=>{
-  $("keyStatus").textContent="正在连接 DeepSeek…";
+  $("keyStatus").textContent="正在连接…";
   try{
     const r=await(await api("/api/settings/test",{method:"POST"})).json();
     if(r.ok){
@@ -589,7 +661,7 @@ $("btnSelfTest").addEventListener("click",async()=>{
   }catch(e){ out.textContent="自检失败："+e.message }
 });
 
-const state={domains:[],items:[],cur:null,domain:null,
+const state={domains:[],items:[],cur:null,domain:null,sid:null,kbSearched:[],kbRecommended:"",
   steps:+(localStorage.getItem("steps")||12), demo:localStorage.getItem("demo")==="1"};
 $("steps").value=state.steps; $("demoMode").checked=state.demo;
 $("steps").addEventListener("change",()=>{state.steps=+$("steps").value||12;localStorage.setItem("steps",state.steps)});
@@ -771,8 +843,7 @@ function step(no,text,cls){
   $("log").appendChild(r); $("log").scrollTop=$("log").scrollHeight;
 }
 $("goAnalyze").addEventListener("click",async()=>{
-  if(!state.cur){$("analyzeStatus").textContent="请先选择题目";return}
-  const b=$("goAnalyze"); b.disabled=true;
+  if(!state.cur){$("analyzeStatus").textContent="请先选择题目";return}  const b=$("goAnalyze"); b.disabled=true;
   $("log").innerHTML=""; $("analyzeOut").innerHTML=""; $("analyzeStatus").textContent="运行中";
   try{
     const resp=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -795,9 +866,12 @@ $("goAnalyze").addEventListener("click",async()=>{
         else if(ev.kind==="usage") $("analyzeStatus").textContent="用量 "+ev.total_tokens+" tokens";
         else if(ev.kind==="prompt") $("analyzeOut").innerHTML=
           `<div class="card pad-lg article"><h3>将发给模型的内容</h3><div class="readout tall">${esc("【System】\n"+ev.system+"\n\n【Task】\n"+ev.task)}</div></div>`;
-        else if(ev.kind==="answer"&&ev.answer){
+        else if(ev.kind==="session"){ state.sid=ev.sid; }
+        else if(ev.kind==="answer" && (ev.answer||ev.text)){
+          const a=ev.answer||ev.text;
           step("✓","完成","done");
-          $("analyzeOut").innerHTML=`<div class="card pad-lg article">${md(ev.answer)}</div>`;
+          $("analyzeOut").innerHTML=`<div class="card pad-lg article">${md(a)}</div>`;
+          if(state.sid){ $("askBox").hidden=false; }   // 有会话就能追问
         }
         else if(ev.kind==="done"){ $("analyzeStatus").textContent+=" · 完成"; loadFiles(); }
       }
@@ -805,6 +879,48 @@ $("goAnalyze").addEventListener("click",async()=>{
   }catch(e){ step("!","请求失败："+e.message,"err") }
   finally{ b.disabled=false }
 });
+
+/* ── 追问：接着上一次分析继续问（模型记得上下文，且仍带工具）── */
+async function runAsk(){
+  const q=$("askInput").value.trim();
+  if(!q){ $("askStatus").textContent="请先写问题"; return }
+  if(!state.sid){ $("askStatus").textContent="请先做一次分析，再追问"; return }
+  const btn=$("btnAsk"); btn.disabled=true; $("askStatus").textContent="思考中…";
+  $("log").innerHTML="";
+  const box=document.createElement("div"); box.className="article";
+  box.style.cssText="border-top:1px solid var(--line);padding-top:var(--s3);margin-top:var(--s3)";
+  box.innerHTML=`<h4>我：${esc(q)}</h4><div class="muted">正在回答…</div>`;
+  $("askLog").appendChild(box); box.scrollIntoView({behavior:"smooth",block:"nearest"});
+  try{
+    const resp=await fetch("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({sid:state.sid,question:q})});
+    if(!resp.ok) throw new Error((await resp.text()).slice(0,200));
+    const rd=resp.body.getReader(),dec=new TextDecoder();let buf="",answer="";
+    while(true){
+      const {value,done}=await rd.read(); if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const parts=buf.split("\n\n"); buf=parts.pop();
+      for(const p of parts){
+        if(!p.startsWith("data: "))continue;
+        const ev=JSON.parse(p.slice(6));
+        if(ev.kind==="step") step(String(ev.n).padStart(2,"0"),"第 "+ev.n+" 步");
+        else if(ev.kind==="tool") step("·","调用工具 "+ev.name+"（"+JSON.stringify(ev.args).slice(0,90)+"）","tool");
+        else if(ev.kind==="tool_result") step("·","返回 "+ev.chars+" 字符");
+        else if(ev.kind==="error") step("!","出错："+ev.text,"err");
+        else if(ev.kind==="usage") $("askStatus").textContent="用量 "+ev.total_tokens+" tokens";
+        else if(ev.kind==="answer" && (ev.answer||ev.text)){ answer=ev.answer||ev.text; }
+        else if(ev.kind==="done"){ $("askStatus").textContent+=" · 完成"; }
+      }
+    }
+    box.innerHTML=`<h4>我：${esc(q)}</h4><div>${md(answer||"（模型没有给出回答）")}</div>`;
+    $("askInput").value="";
+  }catch(e){
+    box.innerHTML=`<h4>我：${esc(q)}</h4><div class="note err">${ic("alert")}${esc(e.message)}</div>`;
+    $("askStatus").textContent="追问失败";
+  }finally{ btn.disabled=false }
+}
+$("btnAsk").addEventListener("click",runAsk);
+$("askInput").addEventListener("keydown",e=>{ if(e.key==="Enter") runAsk(); });
 
 /* ── 调参 ── */
 $("goSample").addEventListener("click",async()=>{
