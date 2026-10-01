@@ -200,7 +200,8 @@ def api_learning(file: str = "", name: str = "", domain: str = "diansai",
         text = got
         if file:
             meta = next((x for x in list_shiti_structured() if x["file"] == file), None)
-    data = learning_for(domain, text=text, top_k=max(1, min(int(max_items), 20)))
+    data = learning_for(domain, text=text, top_k=max(1, min(int(max_items), 20)),
+                        title=(meta or {}).get("title", ""))
     return JSONResponse({**data, "meta": meta})
 
 

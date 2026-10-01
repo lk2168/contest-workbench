@@ -132,6 +132,8 @@ def main() -> int:
     # ★ 显式重置域名：上面的"未知分区 → 400"用例会把 CONTEST_DOMAIN 污染成 xx
     #   （接口用环境变量切换分区，这是已知的设计气味，测试里要自己兜住）
     os.environ["CONTEST_DOMAIN"] = "diansai"
+    # ★ 回归：真实题面的首位命中必须是"主题知识"，不能被通用词顶掉
+    os.environ["CONTEST_DOMAIN"] = "diansai"
     kb = list_shiti_structured()
     if not kb:
         skip("接口：按真实题面匹配", "本机题库为空（版权原因题库不进仓库）")
@@ -144,6 +146,22 @@ def main() -> int:
         check("接口：返回 meta（题号/年份，界面要显示）", bool(d.get("meta")))
         bad = client.get("/api/learning", params={"domain": "diansai", "file": "不存在的题.md"})
         check("接口：题不存在 → 404", bad.status_code == 404, str(bad.status_code))
+
+        # 控制类题（H）首位应是控制/机电，电源类题（A）首位应是电力电子
+        h = next((x for x in kb if x["code"] == "H"), None)
+        a = next((x for x in kb if x["code"] == "A"), None)
+        if h:
+            d = client.get("/api/learning", params={"domain": "diansai", "file": h["file"]}).json()
+            top = d["items"][0]["id"] if d["items"] else ""
+            check(f"回归：H题首位命中是控制/机电类（不是报告类）",
+                  top in ("control-pid", "motor-control", "signal-conditioning"), f"首位={top}")
+        if a:
+            d = client.get("/api/learning", params={"domain": "diansai", "file": a["file"]}).json()
+            top = d["items"][0]["id"] if d["items"] else ""
+            check(f"回归：A题首位命中是电力电子类", top == "power-electronics", f"首位={top}")
+        d = client.get("/api/learning", params={"domain": "diansai"}).json()
+        check("通用词降权生效：题名加成不误伤（无题面时仍按知识表顺序）",
+              d["by_keywords"] is False)
 
     print("\n" + "=" * 52)
     tail = f"，跳过 {len(SKIP)} 项" if SKIP else ""

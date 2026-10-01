@@ -18,6 +18,12 @@ from pathlib import Path
 from ..domains import PROMPT_DIR, get_domain
 
 _CACHE: dict[str, list[dict]] = {}
+_GENERIC_CACHE: dict[str, list[str]] = {}
+
+# 通用词命中只算这么多分（1.0 = 正常）—— 见 yaml 顶部"通用关键词"的说明
+GENERIC_WEIGHT = 0.3
+# 题名里的词额外乘这么多倍：题名是最强信号（"AC-AC变换电路"这种一问就知道考什么）
+TITLE_BOOST = 3.0
 
 
 def knowledge_path(domain_id: str) -> Path:
@@ -56,25 +62,57 @@ def load_knowledge(domain_id: str) -> list[dict]:
     return items
 
 
+def _generic_words(domain_id: str) -> list[str]:
+    """通用关键词（yaml 顶部的 `通用关键词:`），缺失时用一份保守默认值。"""
+    if domain_id in _GENERIC_CACHE:
+        return _GENERIC_CACHE[domain_id]
+    words: list[str] = []
+    p = knowledge_path(domain_id)
+    if p.exists():
+        try:
+            import yaml
+            data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            words = [str(w) for w in (data.get("通用关键词") or [])]
+        except Exception:
+            words = []
+    if not words:
+        words = ["方案", "论证", "测试", "报告", "指标", "评分", "结论", "比较", "选型"]
+    _GENERIC_CACHE[domain_id] = words
+    return words
+
+
 def clear_cache() -> None:
     """测试/热更新用：下次读取重新走磁盘（改完 yaml 不必重启）。"""
     _CACHE.clear()
+    _GENERIC_CACHE.clear()
 
 
-def match_knowledge(text: str, items: list[dict], top_k: int = 6) -> list[dict]:
-    """按关键词命中给知识点打分排序（确定性）。
+def match_knowledge(text: str, items: list[dict], top_k: int = 6,
+                    title: str = "", generic: list[str] | None = None) -> list[dict]:
+    """按关键词命中给知识点打分排序（确定性，结果可复现）。
 
-    打分规则：命中的关键词**按长度加权**（越长越具体，如"功率因数"优于"功率"），
-    同分按条目原顺序（保证结果稳定，可测试）。
+    打分 = Σ 每个命中词的 `len(词) × 通用词折扣 × 题名加成`：
+      - **长度加权**：长词更具体（"功率因数" 优于 "功率"）
+      - **通用词折扣 0.3**：方案/测试/报告这类词任何题面都有，几乎不含主题信息
+        （不然"报告写作与评分点"会靠通用词抢到第一，实测踩过）
+      - **题名加成 ×3**：题目名字里的词是最强信号（"AC-AC变换电路"直接点题）
+    同分按条目原顺序 —— 保证排序稳定，可测试。
     """
     hay = (text or "").lower()
-    scored: list[tuple[int, int, dict]] = []
+    head = (title or "").lower()
+    gen = set(generic or [])
+    scored: list[tuple[float, int, dict]] = []
     for idx, it in enumerate(items):
         hits = [k for k in it["命中关键词"] if k and k.lower() in hay]
         if not hits:
             continue
-        score = sum(len(h) for h in hits)
-        scored.append((score, idx, {**it, "命中": hits, "得分": score}))
+        score = 0.0
+        for h in hits:
+            w = GENERIC_WEIGHT if h in gen else 1.0
+            if head and h.lower() in head:
+                w *= TITLE_BOOST
+            score += len(h) * w
+        scored.append((score, idx, {**it, "命中": hits, "得分": round(score, 1)}))
     scored.sort(key=lambda x: (-x[0], x[1]))
     return [x[2] for x in scored[:top_k]]
 
@@ -92,10 +130,13 @@ def search_links(word: str) -> dict:
     }
 
 
-def learning_for(domain_id: str = "diansai", text: str = "", top_k: int = 6) -> dict:
+def learning_for(domain_id: str = "diansai", text: str = "", top_k: int = 6,
+                 title: str = "") -> dict:
     """结构化结果（网页端直接用，不做二次解析）。"""
     items = load_knowledge(domain_id)
-    matched = match_knowledge(text, items, top_k=top_k) if text.strip() else items[:top_k]
+    matched = (match_knowledge(text, items, top_k=top_k, title=title,
+                               generic=_generic_words(domain_id))
+               if text.strip() else items[:top_k])
     from_keywords = bool(text.strip())
     out = []
     for it in matched:
@@ -114,7 +155,7 @@ def learning_for(domain_id: str = "diansai", text: str = "", top_k: int = 6) -> 
 
 
 def suggest_learning(file: str = "", name: str = "", text: str = "",
-                     max_items: int = 6) -> str:
+                     max_items: int = 6, title: str = "") -> str:
     """工具入口：给模型看的 Markdown 清单。
 
     file/name 二选一（题号或文件名），会自动去读题面正文再匹配；
@@ -136,8 +177,17 @@ def suggest_learning(file: str = "", name: str = "", text: str = "",
             source = f"题面（{file or name}）"
         except Exception as e:
             return f"[错误] 读不到题面：{type(e).__name__}: {e}"
+    if not title:
+        # 从题库里取题名 —— 题名是最强信号，能显著改善命中排序
+        try:
+            from .shiti import list_shiti_structured
+            match = next((x for x in list_shiti_structured()
+                          if (file and x["file"] == file) or (name and name in x["file"])), None)
+            title = (match or {}).get("title", "")
+        except Exception:
+            title = ""
 
-    data = learning_for(domain_id, text=body, top_k=max_items)
+    data = learning_for(domain_id, text=body, top_k=max_items, title=title)
     if not data["items"]:
         p = knowledge_path(domain_id)
         return (f"[错误] 没有可用的知识点表：{p}\n"
