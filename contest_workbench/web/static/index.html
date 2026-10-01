@@ -98,6 +98,13 @@ select:hover,input:hover{background:var(--g200)}
 select:focus,input:focus{outline:none;background:var(--surface);box-shadow:0 0 0 4px var(--b100),0 0 0 1px var(--b500)}
 input[type=file]{padding:6px var(--s3);font-size:13px}
 input[type=checkbox]{width:16px;height:16px;accent-color:var(--b600);vertical-align:-3px}
+/* ★ 复选框的焦点反馈：鼠标点完不留"外面的蓝框"，键盘导航时仍然看得见。
+   背景：全局 `input:focus{box-shadow:0 0 0 4px var(--b100),0 0 0 1px var(--b500)}`
+   是给文本框设计的柔光框，复选框也被它命中 —— 鼠标点过后一直顶着蓝框（用户反馈）。
+   实测：鼠标点击 → :focus-visible=false；键盘 Tab → :focus-visible=true，
+   所以用 :focus-visible 区分正好。 */
+input[type=checkbox]:focus{outline:none;box-shadow:none}
+input[type=checkbox]:focus-visible{outline:2px solid var(--b600);outline-offset:2px}
 label{font-size:13px;font-weight:500;color:var(--ink2)}
 .field{margin-bottom:var(--s4)}
 .field>label{display:block;margin-bottom:6px}

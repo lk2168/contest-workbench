@@ -131,6 +131,10 @@ def main() -> int:
           "serHostDomain" in rendered_domain and "btnSerAnalyze" in rendered_domain)
 
     # ★ 核心断言：凡是"JS 中断"都会在渲染结果里留下这条错误提示
+    check("复选框焦点样式：鼠标点完不留外框、键盘导航仍可见（:focus-visible）",
+          "input[type=checkbox]:focus-visible" in dom.replace(" ", "")
+          and "input[type=checkbox]:focus{" in dom.replace(" ", ""))
+
     check("首屏没有出现「加载失败」错误条", "加载失败" not in rendered,
           (re.search(r"加载失败[^<]{0,120}", rendered).group(0) if "加载失败" in rendered else ""))
     check("统计条已由 JS 填充（题库真题）", "题库真题" in rendered)
