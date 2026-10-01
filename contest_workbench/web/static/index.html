@@ -251,6 +251,17 @@ ul.files .acts{display:flex;align-items:center;gap:var(--s4);margin-left:var(--s
 .note.warn{background:var(--warn-bg);color:var(--warn-fg)}
 .note.err{background:var(--err-bg);color:var(--err-fg)}
 .note svg{width:16px;height:16px;flex:none;margin-top:1px}
+/* ★ 按钮别被 flex 压成逐字换行：中文没有词边界，压缩后会一个字一行。
+   min-width:max-content 保证按钮至少能放下自己的文字，放不下就让 .row-actions 换行。 */
+.row-actions>button{min-width:max-content;white-space:nowrap}
+.row-actions>label{flex:none;white-space:nowrap}
+.row-actions>select{min-width:110px}
+.row-actions>input{min-width:120px;flex:none}
+/* 串口页细节：端口下拉别被截断、目标值输入框别被压窄 */
+#serPort{min-width:200px}
+#serTarget{width:170px}
+#serBaud{min-width:104px}
+.row-actions>.chip,.row-actions>span{flex:none}
 /* 「这题要会什么」面板 */
 .learn-item{border-top:1px solid var(--line);padding-top:var(--s3);margin-top:var(--s3)}
 .learn-item:first-of-type{border-top:0;padding-top:0;margin-top:0}
@@ -497,7 +508,7 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
         <div class="card">
           <h3 style="margin-bottom:var(--s3)">数据 → 指标（一键送调参助手）</h3>
           <div class="row-actions">
-            <input id="serTarget" placeholder="目标值（可选，如 1.0）" style="width:150px">
+            <input id="serTarget" placeholder="目标值（可选，如 1.0）">
             <button class="primary" id="btnSerAnalyze">算指标 + PID 建议</button>
             <button class="ghost" id="btnSerRecord">开始记录 CSV</button>
             <button class="ghost" id="btnSerDemo">演示：注入阶跃</button>
@@ -1068,7 +1079,10 @@ let SER_PTS = [], SER_TOTAL = 0, SER_STREAM = null, SER_RAF = 0;
 async function loadPorts(){
   try{
     const d = await (await api("/api/serial/ports")).json();
-    $("serPort").innerHTML = (d.ports||[]).map(p=>`<option value="${esc(p.device)}">${esc(p.device)} · ${esc(p.description||"")}</option>`).join("")
+    $("serPort").innerHTML = (d.ports||[]).map(p=>{
+      const desc = String(p.description||"").replace(/\s*\(COM\d+\)\s*/i, "").trim();
+      return `<option value="${esc(p.device)}">${esc(p.device)}${desc ? " · " + esc(desc) : ""}</option>`;
+    }).join("")
       || '<option value="">（没有可用串口）</option>';
     if(!d.available) $("serMsg").innerHTML = '没装 <code>pyserial</code>：<code>pip install pyserial</code>';
     else if(!(d.ports||[]).length) $("serMsg").innerHTML = '没找到串口 —— ① 板子插好没（换线/换口）② USB 转串口驱动装没 ③ 串口是否被别的软件占用';
@@ -1311,6 +1325,9 @@ async function loadLearning(useFile){
     renderLearn(await (await api(q)).json());
   }catch(e){ $("learnOut").innerHTML=`<div class="note err"><span>匹配失败：${esc(e.message)}</span></div>` }
 }
+/* 深链支持：#serial 直接进串口助手（截图、分享、书签都方便） */
+if(location.hash === "#serial"){ show("serial"); }
+
 $("btnLearn").addEventListener("click",()=>loadLearning(true));
 $("btnLearnAll").addEventListener("click",()=>loadLearning(false));
 
@@ -1397,6 +1414,7 @@ $("files").addEventListener("click",e=>{
 // 深链：#分区 直接进分区页；?report=文件名 直接预览该报告（方便把链接发给队友）
 (function deepLink(){
   const id=location.hash.length>1?location.hash.slice(1):"";
+  if(id==="serial") return;          // ★ #serial 是工具箱（串口助手），别当分区名去 openDomain
   const rep=new URLSearchParams(location.search).get("report");
   if(!id&&!rep) return;
   const t=setInterval(()=>{
