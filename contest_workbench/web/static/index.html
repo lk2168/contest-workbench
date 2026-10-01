@@ -254,6 +254,10 @@ ul.files .acts{display:flex;align-items:center;gap:var(--s4);margin-left:var(--s
 /* ★ 按钮别被 flex 压成逐字换行：中文没有词边界，压缩后会一个字一行。
    min-width:max-content 保证按钮至少能放下自己的文字，放不下就让 .row-actions 换行。 */
 .row-actions>button{min-width:max-content;white-space:nowrap}
+/* ★ 关键：`.work .row-actions` / `.card .row-actions` 里只写了 display:flex;gap，
+   特异性比 .row-actions{flex-wrap:wrap} 高，会把换行覆盖掉 → 内容不换行、直接撑破卡片。
+   这里用**相同特异性 + 更靠后**把 wrap 补回来。 */
+.work .row-actions,.card .row-actions{flex-wrap:wrap}
 .row-actions>label{flex:none;white-space:nowrap}
 .row-actions>select{min-width:110px}
 .row-actions>input{min-width:120px;flex:none}
@@ -627,15 +631,14 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
       </div>
     </div>
 
-    <!-- 串口采数：面板本体会被搬进这里（见 mountSerial） -->
+    <!-- 串口采数：面板本体会被搬进这里（见 mountSerial）。
+       ★ 不要套外层 card —— 套了以后可用宽度变窄，行内控件容易被挤到溢出。 -->
   <div id="panelSerial" class="work" hidden role="tabpanel">
-    <div class="card" style="grid-column:1/-1">
-      <p class="muted" style="margin:0 0 var(--s3)">
-        采数据 → 一键算指标 → 出 PID 建议，全程不用复制粘贴。
-        数据从串口按行读入（每行两个数字即可，如 <code>0.04,0.55</code>）。
-      </p>
-      <div id="serHostDomain"></div>
-    </div>
+    <p class="muted" style="grid-column:1/-1;margin:0 0 var(--s4)">
+      采数据 → 一键算指标 → 出 PID 建议，全程不用复制粘贴。
+      数据从串口按行读入（每行两个数字即可，如 <code>0.04,0.55</code>）。
+    </p>
+    <div id="serHostDomain" style="grid-column:1/-1"></div>
   </div>
 
   <div id="panelTune" class="work" hidden role="tabpanel">
