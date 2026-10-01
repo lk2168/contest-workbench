@@ -79,7 +79,7 @@ python scripts/make_sample_step.py                        # 先生成一份示�
 python cli.py tune samples/step-response-sample.csv --target 1.0            # 含模型诊断
 python cli.py tune samples/step-response-sample.csv --target 1.0 --no-llm   # 只本地算（0 成本）
 
-# 6) 测试：九套共 338 项，全部离线、不需要 API Key（CI 也会自动跑）
+# 6) 测试：十套共 357 项，全部离线、不需要 API Key（CI 也会自动跑）
 python tests/test_offline.py    # 27 项：工具链 + 分区 + 报告落盘
 python tests/test_tuning.py     # 28 项：调参算法（对二阶系统解析解校验）
 python tests/test_web.py        # 70 项：网页接口 + 上传调参 + 错误处理 + 路径安全
@@ -89,6 +89,7 @@ python tests/test_ask.py               # 24 项：追问（多轮上下文）/ �
 python tests/test_learning.py          # 31 项：知识点映射 + 知识表质量闸门（离线）
 python tests/test_profile.py           # 34 项：用户档位/首次引导（假 LLM 验证它真的改变输出）
 python tests/test_serial.py            # 109 项：串口助手 + 合理性守卫（假串口，无需硬件）
+python tests/test_serial_api.py        #  19 项：串口助手的网页接口（feed 注入，无需硬件）
 ```
 
 > 没建题库也能跑：依赖题库的断言会自动**跳过**（题库因版权不进仓库，见 [NOTICE.md](NOTICE.md)）。

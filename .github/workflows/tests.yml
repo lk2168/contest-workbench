@@ -68,6 +68,10 @@ jobs:
       - name: 串口助手（离线，假串口）
         run: python tests/test_serial.py
 
+      # 串口助手的网页接口（feed 注入，无需硬件）
+      - name: 串口助手接口（离线）
+        run: python tests/test_serial_api.py
+
       - name: 命令行空跑（不调用模型）
         run: |
           python cli.py --version

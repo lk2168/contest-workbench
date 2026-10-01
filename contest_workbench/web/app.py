@@ -180,6 +180,131 @@ def api_reveal(payload: dict) -> JSONResponse:
         return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}", "path": str(d)})
 
 
+# ── 串口助手（工作台的"工具箱"第一件）────────────────────────────────────────
+# ★ 进程内单例：本机单用户够用；DTR/RTS 极性已在 serial_assistant.open() 里按真机实测设好
+_SERIAL = None
+
+
+def _serial():
+    global _SERIAL
+    if _SERIAL is None:
+        from ..serial_assistant import SerialAssistant
+        _SERIAL = SerialAssistant()
+    return _SERIAL
+
+
+@app.get("/api/serial/ports")
+def api_serial_ports() -> JSONResponse:
+    """可用串口列表（顺带告诉前端 pyserial 装了没）。"""
+    from ..serial_assistant import list_ports, serial_available
+    ports = list_ports()
+    return JSONResponse({"ports": ports, "available": serial_available(),
+                         "opened": _serial().is_open})
+
+
+@app.post("/api/serial/open")
+def api_serial_open(payload: dict) -> JSONResponse:
+    """打开串口。失败返回人话错误（端口不存在/被占用/参数不合法）。"""
+    p = payload or {}
+    msg = _serial().open(p.get("port", ""), baudrate=p.get("baudrate", 115200),
+                         bytesize=p.get("bytesize", 8), parity=p.get("parity", "N"),
+                         stopbits=p.get("stopbits", 1))
+    return JSONResponse({"ok": not msg.startswith(ERROR_PREFIX), "message": msg})
+
+
+@app.post("/api/serial/close")
+def api_serial_close() -> JSONResponse:
+    return JSONResponse({"ok": True, "message": _serial().close()})
+
+
+@app.post("/api/serial/send")
+def api_serial_send(payload: dict) -> JSONResponse:
+    """发送数据（文本或 HEX，如 "AA 55 01"）。"""
+    p = payload or {}
+    msg = _serial().send(p.get("text", ""), hex_mode=bool(p.get("hex_mode", False)))
+    return JSONResponse({"ok": not msg.startswith(ERROR_PREFIX), "message": msg})
+
+
+@app.post("/api/serial/feed")
+def api_serial_feed(payload: dict) -> JSONResponse:
+    """假串口注入（没有硬件时演示/自测用）：走与真实串口完全相同的解析管线。"""
+    text = (payload or {}).get("text", "")
+    _serial().feed_text(text)
+    return JSONResponse({"ok": True, "message": f"已注入 {len(text)} 字符（走同一套解析管线）"})
+
+
+@app.get("/api/serial/status")
+def api_serial_status() -> JSONResponse:
+    return JSONResponse(_serial().snapshot())
+
+
+@app.post("/api/serial/record")
+def api_serial_record(payload: dict) -> JSONResponse:
+    """开始/停止记录到 CSV（追加写、每行带 ISO 时间戳）。"""
+    on = bool((payload or {}).get("start", True))
+    a = _serial()
+    r = a.start_record((payload or {}).get("path") or None) if on else a.stop_record()
+    return JSONResponse({"ok": not str(r).startswith(ERROR_PREFIX), "message": r,
+                         "recording": a.snapshot().get("recording", False)})
+
+
+@app.post("/api/serial/analyze")
+def api_serial_analyze(payload: dict) -> JSONResponse:
+    """把当前收到的数据一键送调参助手（返回现成的 Markdown 报告）。"""
+    target = (payload or {}).get("target")
+    try:
+        target = None if target in (None, "") else float(target)
+    except Exception:
+        raise HTTPException(status_code=400, detail="目标值必须是数字")
+    report = _serial().analyze(target=target)
+    if report.startswith(ERROR_PREFIX):
+        raise HTTPException(status_code=400, detail=report.replace(ERROR_PREFIX, "").strip())
+    return JSONResponse({"ok": True, "report": report})
+
+
+@app.get("/api/serial/stream")
+def api_serial_stream(limit: int = 0) -> StreamingResponse:
+    """SSE：把新收到的事件 + 增量数据点推给前端（实时曲线用）。
+
+    ★ 只发**增量**：按 `total` 的增量取窗口尾部，避免每 150ms 重传整条曲线。
+    """
+    a = _serial()
+    max_packets = max(0, int(limit))       # 0 = 不限；测试传 limit=N 拿到有限流（否则会一直等）
+
+    def gen():
+        last_total = 0
+        last_dropped = 0
+        sent = 0
+        while True:
+            payload: dict = {"kind": "events", "events": a.read_events(200)}
+            snap = a.snapshot()
+            total, dropped = snap.get("total", 0), snap.get("dropped", 0)
+            if dropped != last_dropped:          # 滑窗滚动了 → 让前端重置缓冲
+                last_total = 0
+                last_dropped = dropped
+            if total > last_total:
+                pts = snap.get("points", [])
+                delta = min(total - last_total, len(pts))
+                payload["new_points"] = pts[-delta:] if delta else []
+                payload["reset"] = False
+                last_total = total
+            if dropped != last_dropped:
+                payload["reset"] = True
+            payload.update({"kind": "events", "total": total, "bad_lines": snap.get("bad_lines", 0),
+                            "outliers": snap.get("outliers", 0), "dropped": dropped,
+                            "is_open": snap.get("is_open", False),
+                            "recording": snap.get("recording", False),
+                            "port": snap.get("port"), "baudrate": snap.get("baudrate")})
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            sent += 1
+            if max_packets and sent >= max_packets:
+                return                      # ★ 有限流：让调用方（含测试）能读完就结束
+            time.sleep(0.15)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.get("/api/profile")
 def api_profile_get() -> JSONResponse:
     """用户经验档位（首次引导填的）。空 = 从未填过。"""

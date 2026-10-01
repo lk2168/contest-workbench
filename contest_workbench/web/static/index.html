@@ -389,6 +389,21 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
       </div>
     </div>
 
+    <!-- 工具箱：不是 AI 分析，而是真正干活时用的工具 -->
+    <div class="section">
+      <div class="head">
+        <h2>工具箱</h2>
+        <span class="muted" style="font-size:12.5px">不消耗模型额度，本地直接跑</span>
+      </div>
+      <div class="cards">
+        <button class="dcard" id="toolsSerial">
+          <div class="dtop"><span class="dname">串口助手</span><span class="chip">已就绪</span></div>
+          <p class="muted">列端口 / 收发 / 实时曲线 / 一键把数据送进调参助手。没有硬件也能用「演示」注入数据。</p>
+          <span class="dgo">打开 →</span>
+        </button>
+      </div>
+    </div>
+
     <div class="section">
       <div class="head">
         <h2>竞赛分区</h2>
@@ -421,6 +436,78 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
   </section>
 
   <!-- 视图二：分区工作台 -->
+  <section id="viewSerial" class="wrap" hidden>
+    <div class="crumbrow">
+      <button class="ghost" id="serBack">← 返回首页</button>
+      <span class="crumb">串口助手</span>
+      <span class="grow"></span>
+      <span class="chip" id="serState">未连接</span>
+    </div>
+    <div class="work">
+      <div class="stack">
+        <div class="card">
+          <h3 style="margin-bottom:var(--s3)">串口连接</h3>
+          <div class="row-actions">
+            <select id="serPort" style="min-width:170px"></select>
+            <select id="serBaud" style="width:110px">
+              <option>9600</option><option>19200</option><option>38400</option>
+              <option>57600</option><option selected>115200</option>
+              <option>230400</option><option>460800</option><option>921600</option>
+            </select>
+            <button class="ghost" id="btnSerRefresh">刷新端口</button>
+            <button class="primary" id="btnSerOpen">打开串口</button>
+          </div>
+          <div class="muted" id="serMsg" style="font-size:12.5px;margin-top:var(--s2)"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:var(--s3)">发送</h3>
+          <div class="row-actions">
+            <input id="serSendText" placeholder="要发送的内容，例如 START 或 0.5,1.2" style="flex:1;min-width:150px">
+            <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+              <input type="checkbox" id="serNL" checked> 加换行
+            </label>
+            <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+              <input type="checkbox" id="serHex"> HEX
+            </label>
+            <button class="primary" id="btnSerSend">发送</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+            <h3>接收</h3>
+            <span class="muted" style="font-size:12px" id="serStats">—</span>
+          </div>
+          <div class="readout" id="serLog" style="height:280px">等待连接…</div>
+          <div class="row-actions" style="margin-top:var(--s3)">
+            <button class="ghost" id="btnSerClear">清空显示</button>
+          </div>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+            <h3>实时曲线</h3>
+            <span class="muted" style="font-size:12px" id="serCurveInfo">尚无数据</span>
+          </div>
+          <div id="serCurve" style="height:230px"></div>
+          <p class="muted" style="font-size:12.5px">
+            只要收到的行里有两个数字（如 <code>0.04,0.55</code>），就自动画成曲线。
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:var(--s3)">数据 → 指标（一键送调参助手）</h3>
+          <div class="row-actions">
+            <input id="serTarget" placeholder="目标值（可选，如 1.0）" style="width:150px">
+            <button class="primary" id="btnSerAnalyze">算指标 + PID 建议</button>
+            <button class="ghost" id="btnSerRecord">开始记录 CSV</button>
+            <button class="ghost" id="btnSerDemo">演示：注入阶跃</button>
+          </div>
+          <div id="serReport" style="margin-top:var(--s3)"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="viewDomain" class="wrap" hidden>
     <div style="padding-top:var(--s6)">
       <button class="link" id="backHome">
@@ -807,7 +894,9 @@ const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok)throw new Error((await 
 $("goDiansai").addEventListener("click",()=>openDomain("diansai"));
 $("goAbout").addEventListener("click",()=>$("howBox").scrollIntoView({behavior:"smooth",block:"start"}));
 
-const show=v=>{$("viewHome").hidden=v!=="home";$("viewDomain").hidden=v!=="domain"};
+const show=v=>{$("viewHome").hidden=v!=="home";$("viewDomain").hidden=v!=="domain";
+  $("viewSerial").hidden=v!=="serial";
+  if(v==="serial"){ loadPorts(); startSerialStream(); } else { stopSerialStream(); }};
 $("backHome").addEventListener("click",()=>{show("home");$("crumb").textContent="选择竞赛";
   history.replaceState(null,"","#");window.scrollTo({top:0})});
 
@@ -972,6 +1061,159 @@ async function runAsk(){
 }
 $("btnAsk").addEventListener("click",runAsk);
 $("askInput").addEventListener("keydown",e=>{ if(e.key==="Enter") runAsk(); });
+
+/* ── 串口助手（工具箱第一件：不花额度、本地跑）── */
+let SER_PTS = [], SER_TOTAL = 0, SER_STREAM = null, SER_RAF = 0;
+
+async function loadPorts(){
+  try{
+    const d = await (await api("/api/serial/ports")).json();
+    $("serPort").innerHTML = (d.ports||[]).map(p=>`<option value="${esc(p.device)}">${esc(p.device)} · ${esc(p.description||"")}</option>`).join("")
+      || '<option value="">（没有可用串口）</option>';
+    if(!d.available) $("serMsg").innerHTML = '没装 <code>pyserial</code>：<code>pip install pyserial</code>';
+    else if(!(d.ports||[]).length) $("serMsg").innerHTML = '没找到串口 —— ① 板子插好没（换线/换口）② USB 转串口驱动装没 ③ 串口是否被别的软件占用';
+    else $("serMsg").textContent = `发现 ${d.ports.length} 个串口，选择后点「打开串口」。`;
+    setSerState(d.opened);
+  }catch(e){ $("serMsg").textContent = "读取端口失败：" + e.message }
+}
+function setSerState(opened, text){
+  $("serState").textContent = text || (opened ? "已连接" : "未连接");
+  $("btnSerOpen").textContent = opened ? "关闭串口" : "打开串口";
+}
+async function toggleSerial(){
+  const opened = $("serState").textContent === "已连接";
+  const url = opened ? "/api/serial/close" : "/api/serial/open";
+  const body = opened ? {} : {port:$("serPort").value, baudrate:parseInt($("serBaud").value,10)};
+  try{
+    const d = await (await api(url,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)})).json();
+    $("serMsg").textContent = d.message;
+    setSerState(!opened && d.ok);
+  }catch(e){ $("serMsg").textContent = "操作失败：" + e.message }
+}
+async function sendSerial(){
+  const hex = $("serHex").checked;
+  let text = $("serSendText").value;
+  if(!hex && $("serNL").checked && !text.endsWith("\n")) text += "\r\n";
+  try{
+    const d = await (await api("/api/serial/send",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text, hex_mode:hex})})).json();
+    $("serMsg").textContent = d.message;
+  }catch(e){ $("serMsg").textContent = "发送失败：" + e.message }
+}
+function serAppendLog(line, color){
+  const box = $("serLog");
+  const div = document.createElement("div");
+  div.textContent = line;
+  if(color) div.style.color = color;
+  box.appendChild(div);
+  while(box.childElementCount > 400) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+function drawCurve(){
+  SER_RAF = 0;
+  const box = $("serCurve");
+  const w = box.clientWidth || 380, h = box.clientHeight || 200, pad = 30;
+  if(SER_PTS.length < 2){
+    box.innerHTML = '<div class="muted" style="font-size:12.5px;padding:var(--s3)">收到两个以上数据点后这里画曲线（或点右下「演示」）。</div>';
+    return;
+  }
+  const ts = SER_PTS.map(p=>p[0]), vs = SER_PTS.map(p=>p[1]);
+  const t0 = Math.min.apply(null,ts), t1 = Math.max.apply(null,ts) || 1;
+  let v0 = Math.min.apply(null,vs), v1 = Math.max.apply(null,vs);
+  if(v1 - v0 < 1e-9){ v0 -= 0.5; v1 += 0.5; }
+  const X = x => pad + (x - t0) / ((t1 - t0) || 1) * (w - pad * 1.4);
+  const Y = y => h - pad - (y - v0) / (v1 - v0) * (h - pad * 1.6);
+  const d = SER_PTS.map((p,i)=>`${i?"L":"M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
+  box.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:100%">
+    <line x1="${pad}" y1="${h-pad}" x2="${w-6}" y2="${h-pad}" stroke="#ddd"/>
+    <line x1="${pad}" y1="6" x2="${pad}" y2="${h-pad}" stroke="#ddd"/>
+    <path d="${d}" fill="none" stroke="#2563EB" stroke-width="1.6"/>
+    <text x="${pad}" y="${h-10}" font-size="10" fill="#888">${t0.toFixed(2)}s</text>
+    <text x="${w-50}" y="${h-10}" font-size="10" fill="#888">${t1.toFixed(2)}s</text>
+    <text x="3" y="${Y(v1)+3}" font-size="10" fill="#888">${v1.toFixed(2)}</text>
+    <text x="3" y="${Y(v0)+3}" font-size="10" fill="#888">${v0.toFixed(2)}</text>
+  </svg>`;
+  $("serCurveInfo").textContent = `${SER_PTS.length} 点 · 量程 ${v0.toFixed(3)} ~ ${v1.toFixed(3)}`;
+}
+function startSerialStream(){
+  if(SER_STREAM) return;
+  const ctrl = new AbortController();
+  SER_STREAM = ctrl;
+  (async()=>{
+    try{
+      const resp = await fetch("/api/serial/stream", {signal: ctrl.signal});
+      const rd = resp.body.getReader(), dec = new TextDecoder();
+      let buf = "";
+      while(true){
+        const chunk = await rd.read();
+        if(chunk.done) break;
+        buf += dec.decode(chunk.value, {stream:true});
+        const parts = buf.split("\n\n"); buf = parts.pop();
+        for(const part of parts){
+          if(part.indexOf("data: ") !== 0) continue;
+          let ev; try{ ev = JSON.parse(part.slice(6)); }catch(e){ continue }
+          for(const e of (ev.events||[])){
+            if(e.kind === "error") serAppendLog("⚠️ " + (e.text||""), "#B54708");
+            else if(e.dir === "tx") serAppendLog("→ " + (e.text||""), "#2563EB");
+            else serAppendLog("← " + (e.text||""));
+          }
+          if(ev.reset) SER_PTS = [];
+          if(ev.new_points && ev.new_points.length){
+            SER_PTS = SER_PTS.concat(ev.new_points);
+            if(SER_PTS.length > 3000) SER_PTS = SER_PTS.slice(-3000);
+          }
+          SER_TOTAL = ev.total || SER_TOTAL;
+          $("serStats").textContent = `${SER_TOTAL} 点 · 坏行 ${ev.bad_lines||0} · 拦截 ${ev.outliers||0}`
+            + (ev.recording ? " · 记录中" : "");
+          setSerState(ev.is_open);
+          if(!SER_RAF) SER_RAF = requestAnimationFrame(drawCurve);
+        }
+      }
+    }catch(e){ /* 切换视图/关页时正常中断 */ }
+    finally{ SER_STREAM = null; }
+  })();
+}
+function stopSerialStream(){ if(SER_STREAM){ SER_STREAM.abort(); SER_STREAM = null; } }
+async function analyzeSerial(){
+  $("serReport").innerHTML = '<span class="muted">计算中…</span>';
+  try{
+    const d = await (await api("/api/serial/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({target:$("serTarget").value})})).json();
+    $("serReport").innerHTML = `<div class="article">${md(d.report)}</div>`;
+  }catch(e){ $("serReport").innerHTML = `<div class="note err"><span>${esc(e.message)}</span></div>` }
+}
+async function recordSerial(){
+  const on = $("btnSerRecord").textContent.indexOf("开始") >= 0;
+  try{
+    const d = await (await api("/api/serial/record",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({start:on})})).json();
+    $("btnSerRecord").textContent = on ? "停止记录" : "开始记录 CSV";
+    $("serMsg").textContent = String(d.message);
+  }catch(e){ $("serMsg").textContent = "记录失败：" + e.message }
+}
+async function serialDemo(){
+  const z = 0.5, wn = 2.0, wd = wn * Math.sqrt(1 - z * z);
+  let s = "";
+  for(let i = 0; i < 120; i++){
+    const t = i * 0.04;
+    const y = 1 - Math.exp(-z * wn * t) * (Math.cos(wd * t) + (z * wn / wd) * Math.sin(wd * t));
+    s += `${t.toFixed(3)},${y.toFixed(5)}\n`;
+  }
+  await api("/api/serial/feed",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({text:s})});
+  $("serMsg").textContent = "已注入演示数据（120 点阶跃）—— 点右边「算指标 + PID 建议」试试";
+}
+if($("toolsSerial")) $("toolsSerial").addEventListener("click",()=>show("serial"));
+if($("serBack")) $("serBack").addEventListener("click",()=>show("home"));
+if($("btnSerRefresh")) $("btnSerRefresh").addEventListener("click",loadPorts);
+if($("btnSerOpen")) $("btnSerOpen").addEventListener("click",toggleSerial);
+if($("btnSerSend")) $("btnSerSend").addEventListener("click",sendSerial);
+if($("serSendText")) $("serSendText").addEventListener("keydown",e=>{ if(e.key==="Enter") sendSerial(); });
+if($("btnSerClear")) $("btnSerClear").addEventListener("click",()=>{ $("serLog").innerHTML="" });
+if($("btnSerAnalyze")) $("btnSerAnalyze").addEventListener("click",analyzeSerial);
+if($("btnSerRecord")) $("btnSerRecord").addEventListener("click",recordSerial);
+if($("btnSerDemo")) $("btnSerDemo").addEventListener("click",serialDemo);
 
 /* ── 首次引导 / 经验档位：决定"怎么给你写"，不是装饰 ── */
 let PROFILE_CHOICES={}, PROFILE={};
