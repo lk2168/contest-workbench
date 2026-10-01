@@ -281,18 +281,44 @@ class Stm32Bootloader:
         return self._retry(lambda: self._write_once(addr, data), f"写 0x{addr:08X}")
 
     def _write_once(self, addr: int, data: bytes) -> None:
+        """写一段（≤256 字节，地址按 4 字节对齐）。
+
+        ★★ 帧格式以 stm32flash（ARMinARM/stm32flash，GPL-2.0）的实现为准：
+        它的 `stm32_write_memory()` 是
+        ```c
+        aligned_len = (len + 3) & ~3;              /* 长度按 4 字节对齐 */
+        buf[0] = aligned_len - 1;
+        数据 + 不足补 0xFF;
+        buf[aligned_len + 1] = 校验;
+        port->write(port, buf, aligned_len + 2);   /* 长度+数据+校验 **一次性发出去** */
+        stm32_get_ack_timeout(...);                /* 整帧发完才等 **一个** ACK */
+        ```
+        ★ 我原来把「长度」和「数据」分两次发、中间还等 ACK —— 设备根本不回中间 ACK，
+        它在等数据，于是表现成「长度后沉默」，最后状态错位收 NACK。真机卡了很久就是这个。
+        """
         self._cmd(0x31, "写命令")
         a = int(addr).to_bytes(4, "big")
         self.io.write(a + bytes([_xor(a)]))
-        time.sleep(self.gap)
         self._ack("写地址")
-        n = len(data) - 1
-        self.io.write(bytes([n, n ^ 0xFF]))
-        time.sleep(self.gap)
-        self._ack("写长度")
-        self.io.write(bytes(data) + bytes([_xor(data)]))
-        time.sleep(self.gap)
-        self._ack("写数据")
+
+        n = len(data)
+        aligned = (n + 3) & ~3                      # ★ 4 字节对齐
+        frame = bytearray([aligned - 1])            # 长度字段
+        frame.extend(data)
+        frame.extend(b"\xFF" * (aligned - n))       # ★ 不足的补 0xFF
+        cs = 0
+        for b in frame:                             # 校验 = 长度+数据+填充 的异或
+            cs ^= b
+        frame.append(cs)
+        old = getattr(self.io, "timeout", None)
+        try:
+            if old is not None:
+                self.io.timeout = max(2.0, old)     # 写 Flash 要有耐心
+            self.io.write(bytes(frame))             # ★ 一次性发出整帧
+            self._ack("写数据")
+        finally:
+            if old is not None:
+                self.io.timeout = old
 
     def go(self, addr: int = 0x08000000) -> None:
         """跳转执行。"""
@@ -358,25 +384,34 @@ class Stm32Flasher:
         只重发命令救不回来（状态已经错位）；但**重新复位进 BootLoader 再来一次就好了**。
         所以这里在失败时调用 `reset_fn`（若提供）整段重试。
         """
-        attempts = 3 if self.reset_fn else 1
+        attempts = 5 if self.reset_fn else 1
         last = None
-        for i in range(1, attempts + 1):
-            try:
-                if i > 1:
-                    say(f"握手失败，重新进 BootLoader 再试（第 {i} 次）")
-                    self.reset_fn()
-                self.bl.sync()
+        keep_retries = self.bl.retries
+        # ★ 实测：握手阶段**不要**让底层"发 0x7F 再重发命令" —— 那会把 BootLoader 的
+        #   命令状态搅乱，反而更糟（今晚对照实验里，成功那次用的就是不重发 + 重进 BootLoader）。
+        self.bl.retries = 1
+        try:
+            for i in range(1, attempts + 1):
                 try:
-                    v1, v2, cmds = self.bl.get_version()
-                    rep.boot_version = f"{v1}.{v2}"
-                    say(f"BootLoader {rep.boot_version} · 支持 {len(cmds)} 条命令")
+                    if i > 1:
+                        say(f"握手失败，重新进 BootLoader 再试（第 {i} 次）")
+                        self.reset_fn()
+                    self.bl.sync()
+                    try:
+                        v1, v2, cmds = self.bl.get_version()
+                        rep.boot_version = f"{v1}.{v2}"
+                        say(f"BootLoader {rep.boot_version} · 支持 {len(cmds)} 条命令")
+                    except IspError as e:
+                        say(f"（先发 Get 没成功，继续试 GetID：{e}）")
+                    rep.pid = self.bl.get_id()
+                    self.bl.retries = keep_retries      # 握手成功后再恢复正常重试
+                    return
                 except IspError as e:
-                    say(f"（先发 Get 没成功，继续试 GetID：{e}）")
-                rep.pid = self.bl.get_id()
-                return
-            except IspError as e:
-                last = e
-                say(f"（第 {i} 次握手没成功：{e}）")
+                    last = e
+                    say(f"（第 {i} 次握手没成功：{e}）")
+        finally:
+            if self.bl.retries == 1:
+                self.bl.retries = keep_retries
         raise IspError(f"进 BootLoader 后握手失败（试了 {attempts} 次）：{last}")
 
     def flash(self, hexfile, expect_pid=None, verify: bool = True,

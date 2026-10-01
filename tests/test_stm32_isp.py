@@ -157,6 +157,29 @@ class 假BootLoader:
                 self.out.append(ACK)
                 self.state = self.state.replace("_addr", "_len")
             elif self.state in ("read_len", "write_len"):
+                if self.state == "write_len":
+                    # ★ 整帧 = 1 字节长度 + N 字节数据 + 1 字节校验（数据可能含 0xFF 填充）
+                    if not self.buf:
+                        return
+                    cnt = self.buf[0] + 1
+                    if len(self.buf) < 1 + cnt + 1:
+                        return
+                    body = bytes(self.buf[:1 + cnt])
+                    chk = self.buf[1 + cnt]
+                    del self.buf[:1 + cnt + 1]
+                    cs = 0
+                    for b in body:
+                        cs ^= b
+                    if chk != cs:
+                        self._nack()
+                        self.state = "idle"
+                        continue
+                    off = self.frame["addr"] - self.FLASH_BASE
+                    self.mem[off:off + cnt] = body[1:]
+                    self.write_calls += 1
+                    self.out.append(ACK)
+                    self.state = "idle"
+                    continue
                 if len(self.buf) < 2:
                     return
                 n, comp = self.buf[0], self.buf[1]
@@ -174,6 +197,7 @@ class 假BootLoader:
                     self.read_calls += 1
                     self.state = "idle"
                 else:
+                    # ★ 真协议：长度和数据、校验是**一整帧**发过来的，收到整帧才回一个 ACK
                     self.frame["n"] = n + 1
                     self.state = "write_data"
             elif self.state == "read_data":
@@ -181,22 +205,6 @@ class 假BootLoader:
                 off = self.frame["addr"] - self.FLASH_BASE
                 self.out.extend(self.mem[off:off + n])
                 self.read_calls += 1
-                self.state = "idle"
-            elif self.state == "write_data":
-                n = self.frame["n"]
-                if len(self.buf) < n + 1:
-                    return
-                data = bytes(self.buf[:n])
-                chk = self.buf[n]
-                del self.buf[:n + 1]
-                if chk != (lambda d: __import__("functools").reduce(lambda a, b: a ^ b, d, 0))(data):
-                    self._nack()
-                    self.state = "idle"
-                    continue
-                off = self.frame["addr"] - self.FLASH_BASE
-                self.mem[off:off + n] = data
-                self.write_calls += 1
-                self.out.append(ACK)
                 self.state = "idle"
             elif self.state == "go_addr":
                 # Go 的参数在 addr 阶段已经收完了
