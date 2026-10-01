@@ -549,6 +549,63 @@ def main() -> int:
         sa5.close()
     finally:
         set_serial_backend(_旧后端)
+
+    print("\n== DTR/RTS 控制（复位 / 进 BootLoader）==")
+    class 记录电平串口(假串口):
+        """记录 dtr/rts 被设置的顺序，用来验证复位时序。"""
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            object.__setattr__(self, "电平记录", [])
+        def __setattr__(self, name, value):
+            if name in ("dtr", "rts") and "电平记录" in self.__dict__:
+                记录 = object.__getattribute__(self, "电平记录")
+                记录.append((name, bool(value)))
+            super().__setattr__(name, value)
+
+    _后端 = 造后端()
+    _后端.Serial = 记录电平串口
+    _旧 = set_serial_backend(_后端)
+    try:
+        a = SerialAssistant()
+        check("未打开串口时设电平 → 人话错误",
+              a.set_lines(dtr=True).startswith("[错误]") and "打开" in a.set_lines(dtr=True))
+        check("未打开串口时复位 → 人话错误",
+              a.pulse_reset("dtr_low").startswith("[错误]"))
+        check("不认识的预设名 → 报错并列出可选",
+              a.pulse_reset("乱写").startswith("[错误]") and "dtr_low" in a.pulse_reset("乱写"))
+        check("未打开串口时自动探测不炸（返回一条 error）",
+              len(a.probe_presets()) == 1 and a.probe_presets()[0]["verdict"] == "error")
+
+        a.open("COM7")
+        ser = a._ser
+        ser.电平记录.clear()
+        msg = a.set_lines(dtr=True, rts=False)
+        check("set_lines 只动指定的线、并在提示里说清电平",
+              ser.电平记录 == [("dtr", True), ("rts", False)] and "DTR=高" in msg and "RTS=低" in msg,
+              f"记录={ser.电平记录} msg={msg[:60]}")
+        check("line_state 反映当前电平", a.line_state() == {"dtr": True, "rts": False},
+              str(a.line_state()))
+
+        ser.电平记录.clear()
+        a.pulse_reset("dtr_low_rts_high_boot", hold=0, boot_wait=0)
+        check("★ 复位时序正确：先设 Boot 选择线 → 拉复位线 → 放开复位线",
+              ser.电平记录 == [("rts", True), ("dtr", False), ("dtr", True)],
+              str(ser.电平记录))
+        ser.电平记录.clear()
+        a.pulse_reset("rts_high", hold=0, boot_wait=0)
+        check("不用另一条线的预设：只动复位线（先拉到有效电平再放开）",
+              ser.电平记录 == [("rts", True), ("rts", False)], str(ser.电平记录))
+
+        ser.电平记录.clear()
+        res = a.probe_presets(warmup=0, window=0)
+        check("自动探测覆盖 12 种预设且每项都有判定",
+              len(res) == 12 and all(set(x) >= {"preset", "name", "verdict"} for x in res),
+              f"{len(res)} 项")
+        check("★ 探测时每种都用「两者都高」做基线（否则上一种的电平会污染判定）",
+              len([1 for k, v in ser.电平记录 if (k, v) == ("dtr", True)]) >= 12)
+        a.close()
+    finally:
+        set_serial_backend(_旧)
     set_serial_backend(None)
     print("\n" + "=" * 52)
     print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")

@@ -218,6 +218,48 @@ def api_serial_open(payload: dict) -> JSONResponse:
     return JSONResponse({"ok": not msg.startswith(ERROR_PREFIX), "message": msg})
 
 
+@app.get("/api/serial/lines")
+def api_serial_lines() -> JSONResponse:
+    """当前 DTR/RTS 电平 + 可选的 12 种预设（供界面下拉）。"""
+    from ..serial_assistant import LINE_PRESETS
+    a = _serial()
+    return JSONResponse({
+        "lines": a.line_state(),
+        "presets": [{"key": k, "name": v[0]} for k, v in LINE_PRESETS.items()],
+    })
+
+
+@app.post("/api/serial/lines")
+def api_serial_set_lines(payload: dict) -> JSONResponse:
+    """直接设置 DTR/RTS 电平（true=高）。"""
+    p = payload or {}
+    msg = _serial().set_lines(p.get("dtr"), p.get("rts"))
+    return JSONResponse({"ok": not msg.startswith(ERROR_PREFIX), "message": msg,
+                         "lines": _serial().line_state()})
+
+
+@app.post("/api/serial/reset")
+def api_serial_reset(payload: dict) -> JSONResponse:
+    """一键复位：mode=run（复位并运行）或 boot（复位并进 BootLoader）。"""
+    p = payload or {}
+    a = _serial()
+    mode = str(p.get("mode") or "run")
+    preset = p.get("preset") or ("dtr_low_rts_high_boot" if mode == "boot" else "dtr_low")
+    msg = a.reset_boot(preset) if mode == "boot" else a.reset_run(preset)
+    return JSONResponse({"ok": not msg.startswith(ERROR_PREFIX), "message": msg})
+
+
+@app.post("/api/serial/probe-presets")
+def api_serial_probe_presets() -> JSONResponse:
+    """★ 自动探测 12 种 DTR/RTS 预设，报告哪种能让板子运行/进 BootLoader。"""
+    results = _serial().probe_presets()
+    runs = [r["name"] for r in results if r["verdict"] == "run"]
+    boots = [r["name"] for r in results if r["verdict"] == "bootloader"]
+    return JSONResponse({"ok": True, "results": results, "run": runs, "bootloader": boots,
+                         "advice": ("本机实测：能让板子运行的是「" + runs[0] + "」"
+                                    if runs else "没有一种预设能让它运行 —— 检查供电/接线/是否被别的软件占用")})
+
+
 @app.post("/api/serial/close")
 def api_serial_close() -> JSONResponse:
     return JSONResponse({"ok": True, "message": _serial().close()})

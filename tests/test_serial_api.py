@@ -141,7 +141,22 @@ def main() -> int:
         check("SSE 读取异常", False, f"{type(e).__name__}: {e}")
     check("SSE 能连续推出事件包", got >= 2, f"只收到 {got} 个")
 
-    print("\n== ⑧ 关闭 ==")
+    print("\n== ⑧ DTR/RTS 与自动探测接口 ==")
+    d = client.get("/api/serial/lines").json()
+    check("预设接口给出 12 种以上组合", len(d.get("presets", [])) >= 12, str(len(d.get("presets", []))))
+    check("每种预设都有 key 与中文名",
+          all(p.get("key") and p.get("name") for p in d["presets"]))
+    client.post("/api/serial/close")
+    r = client.post("/api/serial/lines", json={"dtr": True}).json()
+    check("未打开串口就设电平 → ok=False 且说人话",
+          r["ok"] is False and "打开" in r["message"], r["message"][:60])
+    r = client.post("/api/serial/reset", json={"mode": "run"}).json()
+    check("未打开串口就复位 → ok=False", r["ok"] is False, r["message"][:60])
+    r = client.post("/api/serial/probe-presets").json()
+    check("未打开串口时自动探测不炸（返回 error 项）",
+          r["ok"] is True and len(r["results"]) == 1, str(r)[:80])
+
+    print("\n== ⑨ 关闭 ==")
     r = client.post("/api/serial/close").json()
     check("关闭串口 → ok", r["ok"] is True, str(r)[:60])
     check("关闭后 status.is_open=False", client.get("/api/serial/status").json()["is_open"] is False)

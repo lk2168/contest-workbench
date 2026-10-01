@@ -198,6 +198,45 @@ def _fmt_num(x: float) -> str:
     return f"{v:.9g}"
 
 
+# ★ DTR / RTS 预设（与 ATK-XISP 下拉里的 12 种一一对应）
+#   含义：先按预设把「Boot 选择线」拉到指定电平，再对「复位线」打一个脉冲。
+#   - 一键下载电路（正点原子等）：靠 DTR/RTS 自动完成「复位 + 进 BootLoader」
+#   - ★ 实测（探索者 V3 + CH340，2026-10-02）：pyserial 的 dtr/rts 与**线电平**
+#     在不同 USB 转串口芯片上可能相反 —— 本板实测「两者都置高」= 正常运行程序，
+#     任意一个置低会把芯片按住（现象：串口打开着但一个字节都收不到）。
+#     所以这里**不替你猜**：给预设、给电平直控、给一键操作，极性不对就换一个试。
+LINE_PRESETS: dict = {
+    "none":                  ("不使用 RTS 和 DTR", None, None),
+    "dtr_low":               ("DTR 低电平复位 · 不用 RTS", "DTR", 0),
+    "dtr_low_rts_low_boot":  ("DTR 低电平复位 · RTS 低电平进 BootLoader", "DTR", 0),
+    "dtr_low_rts_high_boot": ("DTR 低电平复位 · RTS 高电平进 BootLoader", "DTR", 1),
+    "dtr_high":              ("DTR 高电平复位 · 不用 RTS", "DTR", 1),
+    "dtr_high_rts_low_boot": ("DTR 高电平复位 · RTS 低电平进 BootLoader", "DTR", 1),
+    "dtr_high_rts_high_boot": ("DTR 高电平复位 · RTS 高电平进 BootLoader", "DTR", 1),
+    "rts_low":               ("RTS 低电平复位 · 不用 DTR", "RTS", 0),
+    "rts_low_dtr_low_boot":  ("RTS 低电平复位 · DTR 低电平进 BootLoader", "RTS", 0),
+    "rts_low_dtr_high_boot": ("RTS 低电平复位 · DTR 高电平进 BootLoader", "RTS", 0),
+    "rts_high":              ("RTS 高电平复位 · 不用 DTR", "RTS", 1),
+    "rts_high_dtr_low_boot": ("RTS 高电平复位 · DTR 低电平进 BootLoader", "RTS", 1),
+    "rts_high_dtr_high_boot": ("RTS 高电平复位 · DTR 高电平进 BootLoader", "RTS", 1),
+}
+# 「复位线 / Boot 选择线」要从预设名里推出来：名字形如 <复位线>_<电平>[_<boot线>_<电平>_boot]
+_PRESET_HELP = {
+    "dtr_low": ("DTR", 0, None, None),
+    "dtr_low_rts_low_boot": ("DTR", 0, "RTS", 0),
+    "dtr_low_rts_high_boot": ("DTR", 0, "RTS", 1),
+    "dtr_high": ("DTR", 1, None, None),
+    "dtr_high_rts_low_boot": ("DTR", 1, "RTS", 0),
+    "dtr_high_rts_high_boot": ("DTR", 1, "RTS", 1),
+    "rts_low": ("RTS", 0, None, None),
+    "rts_low_dtr_low_boot": ("RTS", 0, "DTR", 0),
+    "rts_low_dtr_high_boot": ("RTS", 0, "DTR", 1),
+    "rts_high": ("RTS", 1, None, None),
+    "rts_high_dtr_low_boot": ("RTS", 1, "DTR", 0),
+    "rts_high_dtr_high_boot": ("RTS", 1, "DTR", 1),
+}
+
+
 class SerialAssistant:
     """串口助手（纯逻辑 + 薄 IO）。所有对外方法都不抛异常，只返回结果或人话错误串。"""
 
@@ -272,6 +311,130 @@ class SerialAssistant:
         return self._rec_path
 
     # ── 打开 / 关闭 ──────────────────────────────────────────────────────
+    # ── DTR / RTS 控制（一键下载电路、复位、进 BootLoader）──────────────
+    def line_state(self) -> dict:
+        """当前 DTR/RTS 电平（True=高）。没打开串口时返回空。"""
+        with self._lock:
+            ser = self._ser
+        if ser is None:
+            return {}
+        out = {}
+        for name in ("dtr", "rts"):
+            try:
+                out[name] = bool(getattr(ser, name))
+            except Exception:
+                out[name] = None
+        return out
+
+    def set_lines(self, dtr=None, rts=None) -> str:
+        """直接设置 DTR/RTS 电平（True=高，None=不动）。"""
+        if not self.is_open:
+            return "[错误] 串口还没打开，先打开串口再控制 DTR/RTS"
+        done = []
+        with self._lock:
+            ser = self._ser
+            for name, val in (("dtr", dtr), ("rts", rts)):
+                if val is None:
+                    continue
+                try:
+                    setattr(ser, name, bool(val))
+                    done.append(f"{name.upper()}={'高' if val else '低'}")
+                except Exception as e:
+                    return f"[错误] 设置 {name.upper()} 失败：{type(e).__name__}: {e}"
+        if not done:
+            return "没有要改的电平（dtr/rts 都是 None）"
+        return "已设置 " + "，".join(done) + "。★ 不同 USB 转串口芯片的极性可能相反；若板子不动就换一组预设试试。"
+
+    def pulse_reset(self, preset: str = "dtr_low_rts_high_boot",
+                    hold: float = 0.15, boot_wait: float = 0.35) -> str:
+        """按预设打一个复位脉冲：先设 Boot 选择线 → 拉复位线 → 保持 → 放开 → 等启动。
+
+        预设名见 `LINE_PRESETS`（与 ATK-XISP 下拉里的 12 种对应）。
+        """
+        if preset not in _PRESET_HELP:
+            return (f"[错误] 不认识的重置方式：{preset}"
+                    f"（可选：{'、'.join(_PRESET_HELP)}）")
+        if not self.is_open:
+            return "[错误] 串口还没打开，先打开串口再复位"
+        reset_line, reset_level, boot_line, boot_level = _PRESET_HELP[preset]
+        name = LINE_PRESETS[preset][0]
+
+        def put(line, level, label):
+            with self._lock:
+                ser = self._ser
+                if ser is None:
+                    raise RuntimeError("串口已关闭")
+                setattr(ser, line.lower(), bool(level))
+            return f"{label}{'高' if level else '低'}"
+
+        try:
+            steps = []
+            if boot_line:                                # ① 先选启动方式
+                steps.append(put(boot_line, boot_level, f"{boot_line}="))
+            steps.append(put(reset_line, reset_level, f"{reset_line}="))   # ② 拉复位
+            time.sleep(max(0.0, float(hold)))
+            steps.append(put(reset_line, not reset_level, f"{reset_line}="))  # ③ 放开复位
+            time.sleep(max(0.0, float(boot_wait)))
+        except Exception as e:
+            return f"[错误] 复位失败：{type(e).__name__}: {e}"
+        self._push_event_locked("line", f"[复位] 按「{name}」打了复位脉冲（{' → '.join(steps)}）",
+                                dir="rx")
+        # ★ 不要断言"现在应该在 BootLoader" —— 不同芯片/电路的极性可能相反，
+        #   本板实测就出现过「名字写着进 BootLoader，实际跑的是用户程序」。
+        tail = "。若板子没按预期跑起来/没进 BootLoader，换一个预设，或点「自动探测这 12 种」实测一遍"
+        return f"已按「{name}」复位：{' → '.join(steps)}{tail}"
+
+    def reset_run(self, preset: str = "dtr_low") -> str:
+        """复位并让板子正常运行程序（不选 BootLoader）。"""
+        return self.pulse_reset(preset)
+
+    def probe_presets(self, warmup: float = 0.45, window: float = 0.6) -> list:
+        """★ 自动探测：把 12 种 DTR/RTS 预设逐个试一遍，判定板子处于什么状态。
+
+        为什么需要它：不同 USB 转串口芯片 / 一键下载电路的**极性可能相反**，
+        照文档猜一定会错（本机实测：12 种里只有「两者都置高」能让板子正常运行程序）。
+        与其让用户一个个猜，不如**实测一遍告诉他哪种能用**。
+
+        判定依据（每种预设试完发一行 ATK）：
+          - 收到 0x1F(NACK)  → 在 BootLoader
+          - 收到周期提示/开机信息（请输入 / ALIENTEK / 串口实验）→ 用户程序在跑
+          - 有数据但不认识    → unknown
+          - 什么都没有        → 静默（大概率被按在复位）
+        """
+        out = []
+        if not self.is_open:
+            return [{"preset": "", "name": "（串口没打开）", "verdict": "error"}]
+        for key, (name, _l, _b) in LINE_PRESETS.items():
+            if key == "none":
+                continue
+            verdict = "silent"
+            try:
+                # ★ 基线：每次先设成"两者都高"（本机实测的运行态），
+                #   否则上一种预设留下的电平会污染下一次判定
+                self.set_lines(dtr=True, rts=True)
+                time.sleep(0.15)
+                self.read_events(999)
+                self.pulse_reset(key, hold=0.12, boot_wait=warmup)
+                self.read_events(999)                    # 丢掉复位提示本身
+                self.send("ATK\r\n")
+                time.sleep(window)
+                evs = self.read_events(999)
+                text = "".join(str(e.get("text") or "") for e in evs if e.get("dir") != "tx")
+                if "\x1f" in text:
+                    verdict = "bootloader"
+                elif any(k in text for k in ("请输入", "ALIENTEK", "串口实验")):
+                    verdict = "run"
+                elif text.strip():
+                    verdict = "unknown"
+            except Exception as e:
+                verdict = f"error: {type(e).__name__}"
+            out.append({"preset": key, "name": name, "verdict": verdict})
+        return out
+
+    def reset_boot(self, preset: str = "dtr_low_rts_high_boot") -> str:
+        """复位并让板子进入 BootLoader（配合串口 ISP 下载/一键烧录用）。"""
+        return self.pulse_reset(preset)
+
     def open(self, port, baudrate: int = 115200, bytesize: int = 8,
              parity: str = "N", stopbits=1, timeout: float = 0.1) -> str:
         """打开串口。成功返回人话消息，失败返回 `[错误]` 开头的人话错误（区分原因）。"""

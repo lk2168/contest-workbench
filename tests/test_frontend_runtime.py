@@ -148,6 +148,10 @@ def main() -> int:
     check("有首次引导卡片（三个问题）", "先问三个问题" in rendered and "btnOnboardSave" in rendered)
     check("有工具箱与串口助手页", "工具箱" in rendered and "串口助手" in rendered
           and "serPort" in rendered and "btnSerAnalyze" in rendered)
+    check("串口页有 DTR/RTS 控制（预设 + 一键复位/进 BootLoader + 自动探测）",
+          all(k in rendered for k in ("serPreset", "btnSerProbe", "btnSerResetRun",
+                                     "btnSerResetBoot", "btnSerApplyLines")))
+
     check("没有 JS 报错字样", "Cannot set properties" not in rendered
           and "undefined is not" not in rendered and "null (setting" not in rendered)
 

@@ -498,9 +498,38 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
             <button class="primary" id="btnSerSend">发送</button>
           </div>
         </div>
-        <div class="card">
-          <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
-            <h3>接收</h3>
+          <div class="card">
+            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+              <h3>复位 / BootLoader（DTR/RTS）</h3>
+              <span class="muted" style="font-size:12px" id="serLines">电平：—</span>
+            </div>
+            <div class="row-actions">
+              <select id="serPreset" style="min-width:250px"></select>
+              <button class="ghost" id="btnSerProbe">自动探测这 12 种</button>
+            </div>
+            <div class="row-actions" style="margin-top:var(--s3)">
+              <button class="primary" id="btnSerResetRun">复位并运行</button>
+              <button class="ghost" id="btnSerResetBoot">复位进 BootLoader</button>
+            </div>
+            <div class="row-actions" style="margin-top:var(--s3)">
+              <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+                <input type="checkbox" id="serDtrHigh"> DTR 高
+              </label>
+              <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+                <input type="checkbox" id="serRtsHigh"> RTS 高
+              </label>
+              <button class="ghost" id="btnSerApplyLines">把电平应用到板子</button>
+            </div>
+            <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
+              ★ 不同 USB 转串口芯片 / 一键下载电路的极性**可能相反**，照文档猜常常是错的。
+              点「自动探测这 12 种」会逐个实测，直接告诉你哪种能让板子跑起来、哪种能进 BootLoader。
+            </p>
+            <div id="serProbeResult" style="margin-top:var(--s3)"></div>
+          </div>
+
+          <div class="card">
+            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+              <h3>接收</h3>
             <span class="muted" style="font-size:12px" id="serStats">—</span>
           </div>
           <div class="readout" id="serLog" style="height:280px">等待连接…</div>
@@ -1135,6 +1164,7 @@ async function toggleSerial(){
       body:JSON.stringify(body)})).json();
     $("serMsg").textContent = d.message;
     setSerState(!opened && d.ok);
+    loadLines();                       // 顺便刷新 DTR/RTS 电平显示
   }catch(e){ $("serMsg").textContent = "操作失败：" + e.message }
 }
 async function sendSerial(){
@@ -1188,6 +1218,7 @@ function mountSerial(host){
   if(!el||!host) return;
   if(el.parentElement!==host) host.appendChild(el);
   if(!$("serPort").options.length) loadPorts();
+  loadLines();
 }
 /* 面板当前是否可见（独立视图 或 电赛专区tab） */
 function serialVisible(){ return !$("viewSerial").hidden || !$("panelSerial").hidden; }
@@ -1261,6 +1292,54 @@ async function serialDemo(){
     body:JSON.stringify({text:s})});
   $("serMsg").textContent = "已注入演示数据（120 点阶跃）—— 点右边「算指标 + PID 建议」试试";
 }
+async function loadLines(){
+  try{
+    const d = await (await api("/api/serial/lines")).json();
+    if(!$("serPreset").options.length)
+      $("serPreset").innerHTML = (d.presets||[]).map(p=>`<option value="${esc(p.key)}">${esc(p.name)}</option>`).join("");
+    const L = d.lines || {};
+    const fmt = v => v === true ? "高" : (v === false ? "低" : "?");
+    $("serLines").textContent = "电平：" + (Object.keys(L).length ? `DTR ${fmt(L.dtr)} · RTS ${fmt(L.rts)}` : "—");
+    if(typeof L.dtr === "boolean") $("serDtrHigh").checked = L.dtr;
+    if(typeof L.rts === "boolean") $("serRtsHigh").checked = L.rts;
+  }catch(e){ /* 未打开串口时接口也返回，忽略 */ }
+}
+async function resetBoard(mode){
+  try{
+    const d = await (await api("/api/serial/reset",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({mode, preset:$("serPreset").value})})).json();
+    $("serMsg").textContent = d.message;
+    setTimeout(loadLines, 400);
+  }catch(e){ $("serMsg").textContent = "复位失败：" + e.message }
+}
+async function applyLines(){
+  try{
+    const d = await (await api("/api/serial/lines",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({dtr:$("serDtrHigh").checked, rts:$("serRtsHigh").checked})})).json();
+    $("serMsg").textContent = d.message;
+    loadLines();
+  }catch(e){ $("serMsg").textContent = "设置失败：" + e.message }
+}
+async function probePresets(){
+  const box = $("serProbeResult");
+  box.innerHTML = '<span class="muted">正在逐个实测 12 种组合（约 15 秒，板子会反复复位）…</span>';
+  try{
+    const d = await (await api("/api/serial/probe-presets",{method:"POST"})).json();
+    const tag = v => v === "run" ? '<b style="color:#067647">能跑程序</b>'
+      : v === "bootloader" ? '<b style="color:#B54708">进 BootLoader</b>'
+      : v === "unknown" ? "有响应但不认识" : "静默";
+    box.innerHTML = `<div class="note"><span>★ 实测结论：${esc(d.advice||"")}</span></div>
+      <div class="readout" style="max-height:200px;margin-top:var(--s3)">`
+      + (d.results||[]).map(r=>`${esc(r.name)} → ${tag(r.verdict)}`).join("<br>")
+      + `</div>
+      <p class="muted" style="font-size:12.5px">把上面「能跑程序」的那个选进下拉框，以后就固定用它。</p>`;
+  }catch(e){ box.innerHTML = `<div class="note err"><span>${esc(e.message)}</span></div>` }
+}
+if($("btnSerResetRun")) $("btnSerResetRun").addEventListener("click",()=>resetBoard("run"));
+if($("btnSerResetBoot")) $("btnSerResetBoot").addEventListener("click",()=>resetBoard("boot"));
+if($("btnSerApplyLines")) $("btnSerApplyLines").addEventListener("click",applyLines);
+if($("btnSerProbe")) $("btnSerProbe").addEventListener("click",probePresets);
+
 if($("toolsSerial")) $("toolsSerial").addEventListener("click",()=>show("serial"));
 if($("serBack")) $("serBack").addEventListener("click",()=>show("home"));
 if($("btnSerRefresh")) $("btnSerRefresh").addEventListener("click",loadPorts);
