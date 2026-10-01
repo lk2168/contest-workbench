@@ -320,6 +320,14 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
       <span class="hint" id="modelHint">不预设各家模型名（平台改名很频繁）——点「拉取可用模型」直接问对方要真实列表。</span>
     </div>
     <div class="line">
+      <label>我的档位（首次引导填的）</label>
+      <div class="row" style="gap:var(--s2);align-items:center">
+        <span class="hint" id="profileSummary" style="flex:1">读取中…</span>
+        <button class="quiet" id="btnEditProfile">重新填写</button>
+      </div>
+      <span class="hint">影响提示词与报告结构：第一次参赛会多解释术语、多标容易翻车的地方。</span>
+    </div>
+    <div class="line">
       <label for="steps">最多步数</label>
       <input type="number" id="steps" min="2" max="30" value="12" style="width:96px" />
       <span class="hint">允许 Agent 最多思考几步。越大越可能想周全，也越慢、越费额度；默认 12 够用。</span>
@@ -362,6 +370,23 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
         <button class="ghost" id="goAbout">它是怎么工作的</button>
       </div>
       <div class="stats" id="stats"></div>
+    </div>
+
+    <!-- 首次引导：只影响"怎么给你写"，本机保存、不上传；可跳过、可重填 -->
+    <div class="section" id="onboardSec" hidden>
+      <div class="card pad-lg">
+        <h3 style="margin-bottom:var(--s2)">先问三个问题（30 秒，可跳过）</h3>
+        <p class="muted" style="font-size:13px;margin-bottom:var(--s4)">
+          答案只改我给你的<b>写法与详细程度</b>：比如第一次参赛就多解释术语、多标"容易翻车的地方"。
+          存在你自己电脑上，不上传。
+        </p>
+        <div id="onboardFields"></div>
+        <div class="row-actions" style="margin-top:var(--s4)">
+          <button class="primary" id="btnOnboardSave">保存，开始用</button>
+          <button class="ghost" id="btnOnboardSkip">跳过（以后在设置里填）</button>
+        </div>
+        <div class="muted" id="onboardStatus" style="font-size:12.5px;margin-top:var(--s2)"></div>
+      </div>
     </div>
 
     <div class="section">
@@ -597,6 +622,7 @@ async function loadSettings(){
       : '还没配置。填好 Key 点「保存」，再点「测试连接」验证。';
     $("paths").innerHTML=`配置文件 <code>${esc(s.config_file)}</code><br>输出目录 <code>${esc(s.out_dir)}</code>`;
     $("firstRun").hidden = !!s.has_key;
+    await loadProfile();          // 档位：没填过就显示首次引导卡片
   }catch(e){ $("keyStatus").textContent="读取设置失败："+e.message }
 }
 function applyProviderUI(id, baseUrl){
@@ -946,6 +972,57 @@ async function runAsk(){
 }
 $("btnAsk").addEventListener("click",runAsk);
 $("askInput").addEventListener("keydown",e=>{ if(e.key==="Enter") runAsk(); });
+
+/* ── 首次引导 / 经验档位：决定"怎么给你写"，不是装饰 ── */
+let PROFILE_CHOICES={}, PROFILE={};
+async function loadProfile(){
+  try{
+    const d=await(await api("/api/profile")).json();
+    PROFILE=d.profile||{}; PROFILE_CHOICES=d.choices||{};
+    $("onboardSec").hidden = Object.keys(PROFILE).length>0;   // 填过就不再显示
+    renderOnboard();
+    refreshProfileSummary();
+  }catch(e){ $("onboardSec").hidden=true }
+}
+function renderOnboard(){
+  if(!$("onboardFields")) return;
+  const labels={experience:"你参加过这个竞赛吗",team:"队伍情况",style:"希望我怎么配合你"};
+  $("onboardFields").innerHTML=Object.keys(PROFILE_CHOICES).map(k=>`
+    <div style="margin-bottom:var(--s3)">
+      <div class="muted" style="font-size:13px;margin-bottom:6px">${esc(labels[k]||k)}</div>
+      <div class="row" style="gap:var(--s2);flex-wrap:wrap">
+        ${PROFILE_CHOICES[k].map(v=>`<button class="ghost" data-k="${k}" data-v="${esc(v)}"
+           style="${PROFILE[k]===v?"border-color:var(--b500);color:var(--b700);background:var(--b50)":""}">${esc(v)}</button>`).join("")}
+      </div>
+    </div>`).join("");
+  $("onboardFields").querySelectorAll("button[data-k]").forEach(b=>b.addEventListener("click",()=>{
+    PROFILE[b.dataset.k]=b.dataset.v; renderOnboard();
+  }));
+}
+async function saveProfile(){
+  try{
+    const d=await(await api("/api/profile",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(PROFILE)})).json();
+    PROFILE=d.profile||{};
+    $("onboardStatus").textContent="已保存 —— 之后的方案会按这个档位写";
+    $("onboardSec").hidden=true;
+    refreshProfileSummary();
+  }catch(e){ $("onboardStatus").textContent="保存失败："+e.message }
+}
+function refreshProfileSummary(){
+  if(!$("profileSummary")) return;
+  const parts=Object.values(PROFILE).filter(Boolean);
+  $("profileSummary").textContent = parts.length ? parts.join(" · ") : "还没填（点右边「重新填写」）";
+}
+if($("btnOnboardSave")) $("btnOnboardSave").addEventListener("click",saveProfile);
+if($("btnOnboardSkip")) $("btnOnboardSkip").addEventListener("click",()=>{
+  $("onboardSec").hidden=true;
+  $("onboardStatus").textContent="已跳过 —— 随时可在「设置」里填（会影响之后的分析）";
+});
+if($("btnEditProfile")) $("btnEditProfile").addEventListener("click",()=>{
+  $("onboardSec").hidden=false;
+  $("onboardSec").scrollIntoView({behavior:"smooth",block:"start"});
+});
 
 /* ── 这题要会什么（本地知识表匹配，不调用模型、不花额度）── */
 function renderLearn(d){

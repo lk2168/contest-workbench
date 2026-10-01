@@ -28,6 +28,7 @@ for _stream in (sys.stdout, sys.stderr):
 from contest_workbench.config import REPO_ROOT, Config
 from contest_workbench.domains import DOMAINS, get_domain, list_domains, prompt_text
 from contest_workbench.llm import LLM
+from contest_workbench.profile import load_profile, persona_block, report_hint
 from contest_workbench.loop import Agent
 from contest_workbench.tools import TOOL_SCHEMAS, call_tool
 from contest_workbench.tools.shiti import list_shiti
@@ -65,8 +66,10 @@ def cmd_check(cfg: Config, domain_id: str) -> int:
 
 def cmd_analyze(cfg: Config, domain_id: str, name: str, steps: int, dry_run: bool) -> int:
     d = get_domain(domain_id)
-    system = prompt_text(d, "system")
-    task = prompt_text(d, "analyze") + f"\n\n【本次任务】分析「{name}」这道题。"
+    # ★ 带上用户档位：命令行与网页端的行为要一致（不然同一档位两边输出不同）
+    system = prompt_text(d, "system") + persona_block(load_profile())
+    task = (prompt_text(d, "analyze") + f"\n\n【本次任务】分析「{name}」这道题。"
+            + report_hint(load_profile()))
 
     if dry_run:
         print(f"（分区：{d.id} / {d.name}）")

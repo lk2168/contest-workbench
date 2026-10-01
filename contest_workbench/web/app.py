@@ -180,6 +180,33 @@ def api_reveal(payload: dict) -> JSONResponse:
         return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}", "path": str(d)})
 
 
+@app.get("/api/profile")
+def api_profile_get() -> JSONResponse:
+    """用户经验档位（首次引导填的）。空 = 从未填过。"""
+    from ..profile import CHOICES, LABELS, load_profile, is_newbie
+    return JSONResponse({"profile": load_profile(), "choices": CHOICES, "labels": LABELS,
+                         "is_newbie": is_newbie(), "file": str(__import__(
+                             "contest_workbench.profile", fromlist=["profile_file"]
+                         ).profile_file())})
+
+
+@app.post("/api/profile")
+def api_profile_post(payload: dict) -> JSONResponse:
+    """保存档位（可只传部分字段；传空字符串 = 清空该项，用于"重新填写"）。"""
+    from ..profile import CHOICES, load_profile, save_profile
+    p = payload or {}
+    unknown = set(p) - set(CHOICES)
+    if unknown:
+        raise HTTPException(status_code=400,
+                            detail=f"不认识的档位字段：{', '.join(sorted(unknown))}；"
+                                   f"可用：{', '.join(CHOICES)}")
+    try:
+        path = save_profile(**{k: p[k] for k in p})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse({"saved_to": str(path), "profile": load_profile()})
+
+
 @app.get("/api/learning")
 def api_learning(file: str = "", name: str = "", domain: str = "diansai",
                  max_items: int = 6) -> JSONResponse:
@@ -250,7 +277,7 @@ def api_analyze(payload: dict) -> StreamingResponse:
         if not use_llm or not cfg.has_key:
             why = "演示模式（未调用模型）" if use_llm is False else "未配置模型 Key"
             yield send({"kind": "log", "text": f"⚠️ {why}：本次只展示将要发给模型的提示词。"})
-            system = prompt_text(d, "system")
+            system = _system_for(d)
             task = _build_task(d, target_desc, file, name)
             yield send({"kind": "prompt", "system": system, "task": task})
             yield send({"kind": "done", "answer": ""})
@@ -260,7 +287,7 @@ def api_analyze(payload: dict) -> StreamingResponse:
 
         def worker():
             try:
-                agent = Agent(LLM(cfg), prompt_text(d, "system"), max_steps=steps,
+                agent = Agent(LLM(cfg), _system_for(d), max_steps=steps,
                               verbose=False, on_event=q.put)
                 task = _build_task(d, target_desc, file, name)
                 answer = agent.run(task)
@@ -302,7 +329,7 @@ def api_ask(payload: dict) -> StreamingResponse:
     if not cfg.has_key:
         raise HTTPException(status_code=400, detail="还没有配置模型 Key，无法追问")
 
-    system = prompt_text(d, "system")
+    system = _system_for(d)
     messages = SESSIONS.messages(sid, system, question)
 
     def gen():
@@ -334,8 +361,18 @@ def api_ask(payload: dict) -> StreamingResponse:
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+def _system_for(d) -> str:
+    """系统提示词 = 分区提示词 + 用户档位说明（没填档位就什么都不加）。
+
+    ★ 档位必须真的改变输出，否则首次引导就是形式主义 —— 见 tests/test_profile.py。
+    """
+    from ..profile import load_profile, persona_block
+    return prompt_text(d, "system") + persona_block(load_profile())
+
+
 def _build_task(d, target_desc: str, file: str, name: str) -> str:
     """拼出交给模型的任务描述（把年份/文件名说清楚，避免分析错年份）。"""
+    from ..profile import load_profile, report_hint
     lines = [prompt_text(d, "analyze"),
              f"\n\n【本次任务】分析这道题：**{target_desc}**"]
     if file:
@@ -345,6 +382,7 @@ def _build_task(d, target_desc: str, file: str, name: str) -> str:
         lines.append(f"\n读题时用 `read_shiti(name=\"{name}\")`；"
                      f"若它提示存在多个年份的同题号，请先向用户确认要哪一年。")
     lines.append("\n报告文件名请带上年份/批次，例如 `2025-国赛-H题-分析报告.md`。")
+    lines.append(report_hint(load_profile()))
     return "".join(lines)
 
 
