@@ -285,6 +285,9 @@ class SerialAssistant:
         self._decoder = None
         # ★ 定时发送（调参时反复发同一条指令）与快捷指令
         self._periodic = None            # {"thread":..., "stop": threading.Event(), ...}
+        # ★ 暂停读取：烧录/其它独占串口的操作期间，读取线程必须让开
+        #   （否则它会把 BootLoader 的应答字节抢走 → 烧录读到的是空）
+        self._reader_pause = threading.Event()
         self._periodic_info = {}         # 给界面看的状态
         self._dropped = 0                                      # 被滑窗挤掉的最旧点数
 
@@ -675,6 +678,7 @@ class SerialAssistant:
             ser = self._ser
             port = self._port
             self._stop_flag.set()
+        self._reader_pause.clear()
         if ser is None:
             return "串口本来就没有打开，无需关闭"
         try:
@@ -698,6 +702,9 @@ class SerialAssistant:
         """后台读线程：只负责"读出字节 → 丢进队列"，解析交给 _pump()。"""
         ser = self._ser
         while not self._stop_flag.is_set():
+            if self._reader_pause.is_set():        # ★ 有人独占串口（比如正在烧录）
+                time.sleep(0.02)
+                continue
             try:
                 waiting = 0
                 try:
@@ -851,6 +858,17 @@ class SerialAssistant:
             bits.append(f"校验 {fmt.checksum}")
         bits.append(f"{len(fmt.fields)} 个字段")
         return f"已启用帧解析：「{fmt.name}」（{'、'.join(bits)}）"
+
+    def pause_reader(self) -> str:
+        """暂停后台读取线程（烧录等独占串口的操作用；记得之后 resume_reader()）。"""
+        self._reader_pause.set()
+        time.sleep(0.05)                            # 给线程一点时间退出读循环
+        return "已暂停读取（串口交给烧录独占）"
+
+    def resume_reader(self) -> str:
+        """恢复后台读取线程。"""
+        self._reader_pause.clear()
+        return "已恢复读取"
 
     def frame_stats(self) -> dict:
         """帧解析统计（没启用时返回空 dict）。"""
