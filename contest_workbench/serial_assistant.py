@@ -207,7 +207,9 @@ class SerialAssistant:
                   "M": "PARITY_MARK", "S": "PARITY_SPACE"}
     _SB_NAMES = {1: "STOPBITS_ONE", 1.5: "STOPBITS_ONE_POINT_FIVE", 2: "STOPBITS_TWO"}
 
-    def __init__(self, max_points: int = 5000, max_buffer: int = MAX_LINE_BUFFER):
+    def __init__(self, max_points: int = 5000, max_buffer: int = MAX_LINE_BUFFER,
+                 outlier_guard: bool = True, outlier_factor: float = 8.0,
+                 outlier_min_samples: int = 12):
         try:
             max_points = int(max_points)
         except Exception:
@@ -231,6 +233,14 @@ class SerialAssistant:
         self._events: deque = deque(maxlen=4000)               # 待取走的事件（给 SSE）
         self._total = 0                                        # 累计解析成功的点数
         self._bad_lines = 0                                    # 坏行计数
+        # ★ 合理性守卫：串口是字节流，发生丢字节/半行拼接时可能撮出一个假数字
+        #   （实测：1.137 被撮成 11.37 → 峰值 11.37、超调量 1045%，把报告毁掉）。
+        #   规则：已经积累了足够样本后，若新点的幅值与当前量程相差超过 outlier_factor 倍，
+        #   就判为坏点**忽略并计数**（可在界面上看到，也能关掉）。
+        self.outlier_guard = bool(outlier_guard)
+        self.outlier_factor = max(2.0, float(outlier_factor))
+        self.outlier_min_samples = max(2, int(outlier_min_samples))
+        self._outliers = 0                                      # 被守卫拦下的坏点数
         self._dropped = 0                                      # 被滑窗挤掉的最旧点数
 
         self._rec_file = None
@@ -314,6 +324,18 @@ class SerialAssistant:
                                  stopbits=const(self._SB_NAMES[sb_key], sb_key), timeout=tmo)
         except Exception as e:
             return self._explain_open_error(name, e)
+
+        # ★★★ 实测（正点原子探索者 V3 + CH340 一键下载电路，2026-10-02）：
+        #   pyserial 的 DTR/RTS 极性与官方手册的**相反** —— 只有 **两者都为 True**
+        #   时芯片才运行用户程序；任意一个为 False 都会把芯片按住/不启动，
+        #   现象是"串口能正常打开、但一个字节都收不到"。
+        #   （4 组对照实验 RTS×DTR 全组合，只有「高·高」能收到周期性打印。）
+        #   进 BootLoader 时是另一套时序，见 stm32_flash.py。
+        for line_name in ("rts", "dtr"):
+            try:
+                setattr(ser, line_name, True)
+            except Exception:
+                pass                              # 假后端/平台不支持就算了
 
         with self._lock:
             self._ser = ser
@@ -469,11 +491,37 @@ class SerialAssistant:
                 f"请检查：① 波特率是否和单片机一致；② 发送方是否以 \\n 结尾；"
                 f"③ 是不是在发二进制而不是文本。")
 
+    def _value_range_locked(self) -> tuple:
+        """当前已接收点的幅值范围（用于提示与守卫）。"""
+        if not self._points:
+            return 0.0, 0.0
+        vs = [v for _, v in self._points]
+        return min(vs), max(vs)
+
+    def _is_outlier_locked(self, point) -> bool:
+        """这个点是不是"看起来不可能"的坏点（丢字节/半行拼接造成的）。"""
+        if not self.outlier_guard or len(self._points) < self.outlier_min_samples:
+            return False                     # 样本太少不判，免得把起始段误杀
+        vs = [v for _, v in self._points]
+        lo, hi = min(vs), max(vs)
+        span = max(hi - lo, abs(hi), abs(lo), 1e-12)
+        return abs(point[1]) > span * self.outlier_factor
+
     def _handle_line_locked(self, raw: bytes) -> None:
         if not raw.strip():                 # 空行不算数据、也不算坏行
             return
         text = decode_bytes(raw)
         point = self.parse_numbers(text)
+        if point is not None and self._is_outlier_locked(point):
+            self._outliers += 1
+            lo, hi = self._value_range_locked()
+            self._push_event_locked(
+                "error",
+                f"[提示] 已忽略一个疑似坏点：幅值 {point[1]:g}（当前量程 {lo:g}~{hi:g}，"
+                f"相差超过 {self.outlier_factor:g} 倍）。常见原因是串口丢字节或半行拼接；"
+                f"本次已忽略 {self._outliers} 个。若你的信号确实会跳这么大，"
+                f"可以在设置里关掉守卫。")
+            return
         if point is not None:
             if len(self._points) == self._points.maxlen:
                 self._dropped += 1          # 滑窗挤掉最旧的一个
@@ -546,6 +594,7 @@ class SerialAssistant:
                 "points": [[float(t), float(v)] for t, v in self._points],
                 "total": self._total,
                 "bad_lines": self._bad_lines,
+            "outliers": self._outliers,
                 "dropped": self._dropped,
                 "buffer_bytes": len(self._buf),
                 "pending_events": len(self._events),

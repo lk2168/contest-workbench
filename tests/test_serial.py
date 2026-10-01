@@ -485,6 +485,70 @@ def main() -> int:
             break
     check("13 个对外调用在极端入参下都不抛异常", 全部正常, 细节)
 
+
+    print("\n== 合理性守卫（防丢字节/半行拼接撮出的假点）==")
+    # 背景：真机长跑时曾出现"峰值 11.37、超调 1045%"，而数据里根本没这个值 ——
+    # 解析策略是"取一行里最后两个数字"，一旦丢字节就可能把 1.137 撮成 11.37。
+    import math as _m
+    _zeta, _wn = 0.5, 2.0
+    _wd = _wn * _m.sqrt(1 - _zeta ** 2)
+    _lines = []
+    for _i in range(150):
+        _t = _i * 0.04
+        _y = 1 - _m.exp(-_zeta * _wn * _t) * (_m.cos(_wd * _t) + (_zeta * _wn / _wd) * _m.sin(_wd * _t))
+        _lines.append(f"{_t:.3f},{_y:.5f}")
+    _正文 = "\n".join(_lines) + "\n"          # ★ 末尾要有换行，否则最后一行不算"收到完整一行"
+
+    sa = SerialAssistant()
+    sa.feed_text(_正文)
+    干净 = sa.snapshot()
+    check("干净数据：150 点、零拦截", 干净["total"] == 150 and 干净["outliers"] == 0,
+          f"total={干净['total']} outliers={干净['outliers']}")
+    报告0 = sa.analyze(target=1.0)
+    check("干净数据能正常出报告（含两个超调口径）",
+          "相对稳态值" in 报告0 and "相对目标值" in 报告0)
+
+    sa2 = SerialAssistant()
+    sa2.feed_text("\n".join(_lines[:80]) + "\n")
+    sa2.feed_text("5.000,11.37\n")        # ★ 假点（丢字节撮出来的）
+    sa2.feed_text("\n".join(_lines[80:]) + "\n")
+    拦 = sa2.snapshot()
+    check("★ 假点被拦下：仍是 150 个真点、拦截数=1",
+         拦["total"] == 150 and 拦["outliers"] == 1,
+          f"total={拦['total']} outliers={拦['outliers']}")
+    check("假点没进曲线（所有幅值都在合理范围）", all(abs(v) < 2 for _, v in 拦["points"]))
+    _ev = [e for e in sa2.read_events(999) if e.get("kind") == "error"]
+    check("拦下时给了人话提示（含量程与已拦截次数）",
+          any("疑似坏点" in e.get("text", "") and "11.37" in e.get("text", "") for e in _ev),
+          str(_ev[:1])[:160])
+    报告2 = sa2.analyze(target=1.0)
+    check("★ 有假点时报告依然正确（不再出现 11.37 / 1045%）",
+          "11.37" not in 报告2 and "1045" not in 报告2)
+
+    sa3 = SerialAssistant(outlier_guard=False)
+    sa3.feed_text("\n".join(_lines[:80]) + "\n")
+    sa3.feed_text("5.000,11.37\n")
+    sa3.feed_text("\n".join(_lines[80:]) + "\n")
+    check("守卫可以关掉（关掉后假点被采信，共 151 点）",
+          sa3.snapshot()["total"] == 151 and sa3.snapshot()["outliers"] == 0,
+          f"total={sa3.snapshot()['total']}")
+
+    sa4 = SerialAssistant()
+    sa4.feed_text("0.000,0.0\n0.040,100.0\n")
+    check("起始段不做判定（避免误杀真实的大幅跳变）", sa4.snapshot()["outliers"] == 0)
+
+    print("\n== open() 是否把 DTR/RTS 设成实测正确的状态 ==")
+    _旧后端 = set_serial_backend(造后端())
+    try:
+        sa5 = SerialAssistant()
+        sa5.open("COM7")
+        _ser = getattr(sa5, "_ser", None)
+        check("★ open() 把 RTS 与 DTR 都置为 True（实测：否则芯片不跑程序、一个字节都收不到）",
+              getattr(_ser, "rts", None) is True and getattr(_ser, "dtr", None) is True,
+              f"rts={getattr(_ser, 'rts', None)} dtr={getattr(_ser, 'dtr', None)}")
+        sa5.close()
+    finally:
+        set_serial_backend(_旧后端)
     set_serial_backend(None)
     print("\n" + "=" * 52)
     print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
