@@ -11,5 +11,5 @@ uvicorn[standard]>=0.27
 python-multipart>=0.0.9      # 文件上传（FastAPI 依赖它解析 multipart）
 httpx>=0.27                  # 测试用（fastapi.testclient 依赖）
 
-# 可选：直接读串口实时数据（不装也能用文件数据）
-# pyserial>=3.5
+# 串口助手（读取实测数据 / 边调边看曲线）
+pyserial>=3.5               # 不装也能用文件数据，但串口页签会提示安装

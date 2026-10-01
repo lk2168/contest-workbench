@@ -64,6 +64,10 @@ jobs:
       - name: 用户档位/首次引导（离线）
         run: python tests/test_profile.py
 
+      # 串口助手：用假串口后端覆盖粘包/半包/编码回退/滑窗/异常（无需真实硬件）
+      - name: 串口助手（离线，假串口）
+        run: python tests/test_serial.py
+
       - name: 命令行空跑（不调用模型）
         run: |
           python cli.py --version
