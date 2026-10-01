@@ -31,6 +31,61 @@ from contest_workbench.serial_assistant import (SerialAssistant, list_ports,    
                                                serial_available)
 
 
+def _count(port: str, baud: int, seconds: float) -> tuple:
+    """在某个波特率下听几秒，返回 (行数, 字节数, 前几行原文)。"""
+    a = SerialAssistant()
+    msg = a.open(port, baudrate=baud)
+    if msg.startswith("[错误]"):
+        return -1, 0, [msg]
+    t0 = time.time()
+    lines, sample = 0, []
+    while time.time() - t0 < seconds:
+        for ev in a.read_events(500):
+            if ev.get("kind") == "error":
+                continue
+            lines += 1
+            if len(sample) < 3:
+                sample.append(str(ev.get("text", ""))[:80])
+        time.sleep(0.05)
+    snap = a.snapshot()
+    a.close()
+    return lines, snap.get("buffer_bytes", 0) or 0, sample
+
+
+def scan_baud(port: str, seconds: float = 2.0) -> int:
+    """逐个波特率试一遍 —— 不知道固件用多少波特率时最省事。
+
+    ★ 注意：请**边扫边按板子的复位键**（很多固件只在上电/复位时打印一次）。
+    """
+    common = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
+    print(f"扫描 {port} 的常见波特率（每个听 {seconds:g} 秒）")
+    print("★ 请在这期间反复按板子的复位键 —— 只打印一次的固件必须靠复位才能看到\n")
+    hits = []
+    for b in common:
+        lines, nbytes, sample = _count(port, b, seconds)
+        if lines < 0:
+            print(f"  {b:>7} : {sample[0][:60]}")
+            continue
+        mark = "✅ 有数据" if lines else "─"
+        print(f"  {b:>7} : {lines:>4} 行 {mark}")
+        for s in sample:
+            print(f"            {s}")
+        if lines:
+            hits.append(b)
+    print("\n" + "=" * 60)
+    if hits:
+        print(f"有效波特率：{', '.join(str(h) for h in hits)}")
+        print(f"下一步：python scripts/serial_probe.py {port} --baud {hits[0]} --listen 8")
+    else:
+        print("所有常见波特率都没收到数据。可能原因：")
+        print("  1) 固件根本不打印（换个已知会打印的例程，如正点原子的串口实验）")
+        print("  2) 板子没在运行 / 没上电（看板子上的电源灯）")
+        print("  3) 串口线接的是板子的另一个口（USB_232 与 ST-Link 口是两条独立通道）")
+        print("  4) 波特率非标（如 1000000）；可以在代码里确认后 --baud 指定")
+        print("  5) 板子的 TX/RX 与 CH340 的接线问题（自制板/杜邦线时常见）")
+    return 0 if hits else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="串口探针（列端口 / 听数据）")
     ap.add_argument("port", nargs="?", help="端口名，如 COM5；不填则只列端口")
@@ -38,6 +93,8 @@ def main() -> int:
     ap.add_argument("--listen", type=float, default=5.0, help="听多少秒，默认 5")
     ap.add_argument("--send", default="", help="打开后先发送的内容（如 \"START\\n\"）")
     ap.add_argument("--hex", action="store_true", help="发送内容按 HEX 解释")
+    ap.add_argument("--scan", action="store_true",
+                    help="扫描常见波特率（不知道固件波特率时用它，扫描时请按复位键）")
     args = ap.parse_args()
 
     print("=" * 60)
@@ -58,12 +115,16 @@ def main() -> int:
 
     if not args.port:
         print("\n（只列端口。要听数据请带上端口名，例如：python scripts/serial_probe.py COM5）")
+        print("    不知道波特率就加 --scan：python scripts/serial_probe.py COM5 --scan")
         return 0
 
     dev = args.port
     if not any(p.get("device") == dev for p in ports):
         print(f"\n⚠️ 你给的 {dev} 不在上面的列表里 —— 端口名可能写错了")
         return 1
+
+    if args.scan:
+        return scan_baud(dev)
 
     a = SerialAssistant()
     print(f"\n打开 {dev} @ {args.baud} …")

@@ -84,7 +84,7 @@ class StepMetrics:
     y_ss: float                   # 稳态值（后 10% 采样均值）
     step: float                   # 阶跃幅值 y_ss - y0
     peak: float
-    overshoot_pct: float | None   # 超调量（阶跃幅值为 0 时为 None）
+    overshoot_pct: float | None   # 超调量（相对**稳态值**，教材口径；未稳定时偏小）
     peak_time: float | None
     rise_time: float | None       # 10% → 90%
     settle_time_2: float | None   # ±2% 带
@@ -96,6 +96,9 @@ class StepMetrics:
     target: float | None = None
     smooth_window: int = 1        # 平滑窗口（采样点数），1 = 未平滑
     warnings: list[str] = field(default_factory=list)
+    # ★ 下面两个是后加的，必须放在所有"无默认值"字段之后（dataclass 的硬约束）
+    overshoot_vs_target: float | None = None   # 超调量（相对**目标值**，给了 target 才有）
+    settled: bool = True                       # 末尾是否已稳定（不稳时 y_ss 不可靠）
 
     def table(self) -> str:
         """Markdown 表格（报告里直接可用）。"""
@@ -109,7 +112,8 @@ class StepMetrics:
             ("稳态值 y_ss", fmt(self.y_ss)),
             ("阶跃幅值 Δy", fmt(self.step)),
             ("峰值", fmt(self.peak)),
-            ("**超调量 σ%**", fmt(self.overshoot_pct, " %", 3)),
+            ("**超调量 σ%（相对稳态值）**", fmt(self.overshoot_pct, " %", 3)),
+            ("**超调量（相对目标值）**", fmt(self.overshoot_vs_target, " %", 3)),
             ("**峰值时间 t_p**", fmt(self.peak_time, " s", 3)),
             ("**上升时间 t_r（10%→90%）**", fmt(self.rise_time, " s", 3)),
             ("**调节时间 t_s（±2%）**", fmt(self.settle_time_2, " s", 3)),
@@ -117,6 +121,7 @@ class StepMetrics:
             ("**稳态误差**", fmt(self.steady_error, "", 3)),
             ("振荡（穿越稳态带次数）", f"{self.oscillations}"),
             ("末段噪声 σ", fmt(self.noise_std)),
+            ("数据末尾是否已稳定", "是" if self.settled else "**否（稳态值不可靠）**"),
         ]
         out = ["| 指标 | 值 |", "|---|---|"] + [f"| {k} | {v} |" for k, v in rows]
         if self.target is not None:
@@ -197,10 +202,36 @@ def analyze(t: np.ndarray, y: np.ndarray, target: float | None = None,
     if abs(step) < 1e-12:
         warn.append("阶跃幅值≈0（信号可能没加上/没变化），指标不可信")
 
+    # ★ 末尾是否已稳定：后 10% 的峰峰值若仍超出 ±2% 带（且超过噪声量级），
+    #   说明系统还在振荡/漂移 —— 此时"后 10% 均值"不是稳态值，超调量会被算小
+    #   （实测：ζ=0.5 的系统只采 2 秒，超调量被算成 0.26%，真值是 16.3%）。
+    # 判定要用三条证据，单看"尾部起伏"会被慢振荡骗过：
+    #   实测 ζ=0.5 / ωn=2 的系统（振荡周期 3.6 s）只采 2 s 时，
+    #   最后 0.2 s 的窗口看起来几乎是平的 → 误判为"已稳定"。
+    #   ① 尾部峰峰值在带内  ② 相邻两窗均值不漂移  ③（给了 target 时）y_ss 贴近 target
+    tail = ys[-kss:]
+    prev = ys[-2 * kss:-kss] if n >= 2 * kss else ys[:kss]
+    tail_ptp = float(tail.max() - tail.min())
+    noise_tail = float(np.std(np.diff(tail))) / np.sqrt(2.0) if kss > 1 else 0.0
+    band = max(0.02 * abs(step), 3.0 * noise_tail)
+    drift = abs(float(tail.mean()) - float(prev.mean()))
+    near_target = (target is None or abs(float(target)) < 1e-12
+                   or abs(y_ss - float(target)) <= 0.02 * abs(float(target)))
+    settled = bool(abs(step) < 1e-12
+                   or (tail_ptp <= band and drift <= band and near_target))
+    if not settled:
+        warn.append("数据末尾仍未稳定（后 10% 峰峰值 "
+                    f"{tail_ptp:.4g}，超出 ±2% 带）—— 稳态值不可靠，"
+                    "「相对稳态值」的超调量会偏小，请以「相对目标值」为准或采到稳定为止")
+
     peak_idx = int(np.argmax(ys)) if step >= 0 else int(np.argmin(ys))
     peak = float(ys[peak_idx])
 
     overshoot = None if abs(step) < 1e-12 else (peak - y_ss) / abs(step) * 100.0
+    # 相对目标值的超调量：用户明确给了 target 时，这才是他要的"冲过头多少"
+    overshoot_vs_target = None
+    if target is not None and abs(float(target)) > 1e-12:
+        overshoot_vs_target = (peak - float(target)) / abs(float(target)) * 100.0
     peak_time = float(t[peak_idx] - t0) if peak_idx >= onset else None
 
     # 上升时间：10% → 90%（以 y0 为基准，按 step 方向找首个穿越点）
@@ -259,6 +290,7 @@ def analyze(t: np.ndarray, y: np.ndarray, target: float | None = None,
                        overshoot_pct=overshoot, peak_time=peak_time, rise_time=rise,
                        settle_time_2=ts2, settle_time_5=ts5, steady_error=steady_err,
                        oscillations=osc, noise_std=noise_est, t_start=t0, target=target,
+                       overshoot_vs_target=overshoot_vs_target, settled=settled,
                        warnings=warn, smooth_window=win)
 
 

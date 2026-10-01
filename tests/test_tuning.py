@@ -146,6 +146,44 @@ def main() -> int:
         except Exception as e:
             check("生成 PNG 曲线图", False, f"{type(e).__name__}: {e}")
 
+    print("\n== 数据长度对超调量的影响（真实踩过的坑）==")
+    # 背景：ζ=0.5 / ωn=2 的系统整定时间约 4 s。若只采 2 s，末尾还在振荡，
+    # "后 10% 均值"不是稳态值 → 相对稳态值的超调量被算成 0.26%（真值 16.3%）。
+    import math as _math
+    zeta, wn, tgt = 0.5, 2.0, 1.0
+    wd = wn * _math.sqrt(1 - zeta ** 2)
+
+    def _step(t_end, npts):
+        _t = np.linspace(0, t_end, npts)
+        _y = tgt * (1 - np.exp(-zeta * wn * _t) *
+                    (np.cos(wd * _t) + (zeta * wn / wd) * np.sin(wd * _t)))
+        return _t, _y
+
+    t_short, y_short = _step(2.0, 1000)
+    m_short = analyze(t_short, y_short, target=tgt)
+    check("短数据（2 s，未稳定）被判为「未稳定」", m_short.settled is False)
+    check("未稳定时给出明确警告（不能只给一个好看的数）",
+          any("未稳定" in w for w in m_short.warnings), str(m_short.warnings))
+    check("未稳定时：相对稳态值的超调量确实偏小（复现 0.26% 那个坑）",
+          m_short.overshoot_pct is not None and m_short.overshoot_pct < 5,
+          f"{m_short.overshoot_pct}")
+    check("★ 相对目标值的超调量接近理论值 16.3%（±1.5）",
+          m_short.overshoot_vs_target is not None
+          and abs(m_short.overshoot_vs_target - 16.3) < 1.5,
+          f"{m_short.overshoot_vs_target}")
+    check("报告表格里两个口径都在",
+          "相对稳态值" in m_short.table() and "相对目标值" in m_short.table())
+
+    t_long, y_long = _step(10.0, 5000)
+    m_long = analyze(t_long, y_long, target=tgt)
+    check("长数据（10 s，已稳定）被判为「已稳定」", m_long.settled is True)
+    check("已稳定时：相对稳态值的超调量回到理论值 16.3%（±1.5）",
+          m_long.overshoot_pct is not None and abs(m_long.overshoot_pct - 16.3) < 1.5,
+          f"{m_long.overshoot_pct}")
+    check("两个口径在稳定数据上互相接近",
+          m_long.overshoot_vs_target is not None
+          and abs(m_long.overshoot_pct - m_long.overshoot_vs_target) < 1.5)
+
     print("\n" + "=" * 52)
     print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
     if FAIL:
