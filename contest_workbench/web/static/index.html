@@ -500,6 +500,52 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
         </div>
           <div class="card">
             <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+              <h3>定时发送</h3>
+              <span class="muted" style="font-size:12px" id="serPeriodicState">未开始</span>
+            </div>
+            <div class="row-actions">
+              <input id="serPeriodicMs" type="number" value="1000" min="10" step="50"
+                     style="width:100px" title="间隔（毫秒）">
+              <span class="muted" style="font-size:12.5px;align-self:center">毫秒/次</span>
+              <input id="serPeriodicTimes" type="number" value="0" min="0" style="width:80px"
+                     title="发多少次，0 = 一直发">
+              <span class="muted" style="font-size:12.5px;align-self:center">次（0=一直）</span>
+              <button class="primary" id="btnSerPeriodicStart">开始</button>
+              <button class="ghost" id="btnSerPeriodicStop">停止</button>
+            </div>
+            <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
+              把「发送」框里的内容按间隔重复发（调参时反复发同一条指令用）。
+              板子回显的数据照常进曲线与指标。最快 10 ms。
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+              <h3>快捷指令</h3>
+              <span class="muted" style="font-size:12px" id="serQuickHint">—</span>
+            </div>
+            <div class="row-actions">
+              <input id="serQuickName" placeholder="名字（可空）" style="width:130px">
+              <button class="ghost" id="btnSerQuickAdd">把发送框内容存为快捷指令</button>
+            </div>
+            <div id="serQuickList" style="margin-top:var(--s3)"></div>
+          </div>
+
+          <div class="card">
+            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+              <h3>校验计算 / 组帧</h3>
+              <span class="muted" style="font-size:12px">和校验/CRC 一次算齐</span>
+            </div>
+            <div class="row-actions">
+              <input id="serCkData" placeholder="十六进制：AA 55 01 02" style="flex:1;min-width:150px">
+              <button class="ghost" id="btnSerCkCalc">算校验</button>
+              <button class="ghost" id="btnSerCkAppend">追加校验成整帧</button>
+            </div>
+            <div id="serCkResult" style="margin-top:var(--s2)"></div>
+          </div>
+
+          <div class="card">
+            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
               <h3>复位 / BootLoader（DTR/RTS）</h3>
               <span class="muted" style="font-size:12px" id="serLines">电平：—</span>
             </div>
@@ -1250,6 +1296,7 @@ function mountSerial(host){
   if(!$("serPort").options.length) loadPorts();
   loadLines();
   loadFrames();
+  loadQuick();
 }
 /* 面板当前是否可见（独立视图 或 电赛专区tab） */
 function serialVisible(){ return !$("viewSerial").hidden || !$("panelSerial").hidden; }
@@ -1285,6 +1332,7 @@ function startSerialStream(){
           SER_TOTAL = ev.total || SER_TOTAL;
           $("serStats").textContent = `${SER_TOTAL} 点 · 坏行 ${ev.bad_lines||0} · 拦截 ${ev.outliers||0}`
             + (ev.recording ? " · 记录中" : "");
+          if(ev.periodic) showPeriodic(ev.periodic);
           if(ev.frame && ev.frame.format){
             $("serFrameStats").textContent = `帧 ${ev.frame.frames} · 校验错 ${ev.frame.bad_checksum}`
               + ` · 坏帧 ${ev.frame.bad_frames} · 待拼 ${ev.frame.pending} 字节`;
@@ -1421,6 +1469,100 @@ async function testFrame(){
       (rows.length ? `<div class="readout" style="max-height:150px;margin-top:var(--s2)">${rows.join("<br>")}</div>` : "");
   }catch(e){ box.innerHTML = `<div class="note err"><span>${esc(e.message)}</span></div>` }
 }
+async function periodicSend(on){
+  const body = on ? {text:$("serSendText").value, interval_ms:parseInt($("serPeriodicMs").value,10)||1000,
+                     hex_mode:$("serHex").checked, append_nl:$("serNL").checked,
+                     repeat:parseInt($("serPeriodicTimes").value,10)||0}
+                  : {stop:true};
+  try{
+    const d = await (await api("/api/serial/periodic",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)})).json();
+    $("serMsg").textContent = d.message;
+    showPeriodic(d.state);
+  }catch(e){ $("serMsg").textContent = "定时发送操作失败：" + e.message }
+}
+function showPeriodic(st){
+  st = st || {};
+  $("serPeriodicState").textContent = st.running
+    ? `发送中：每 ${st.interval_ms} ms · 已发 ${st.sent} 次`
+    : (st.sent ? `已停止（共 ${st.sent} 次）` : "未开始");
+}
+async function loadQuick(){
+  try{
+    const d = await (await api("/api/serial/quick")).json();
+    const items = d.items || [];
+    $("serQuickHint").textContent = items.length ? `${items.length} 条（点一下发送）` : "还没有，先把发送框内容存一条";
+    $("serQuickList").innerHTML = items.map((x,i)=>
+      `<div style="display:flex;gap:8px;align-items:center;margin:3px 0">
+         <button class="ghost" data-quick="${i}" style="flex:none">发送</button>
+         <span style="font-size:12.5px;flex:none;min-width:80px">${esc(x.name||"")}</span>
+         <code style="font-size:12px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.text)}</code>
+         <button class="ghost" data-quickdel="${i}" style="flex:none;margin-left:auto">删</button>
+       </div>`).join("") || '<span class="muted" style="font-size:12.5px">还没有快捷指令</span>';
+    $("serQuickList").querySelectorAll("button[data-quick]").forEach(b=>{
+      b.addEventListener("click",()=>{
+        const it = items[parseInt(b.dataset.quick,10)];
+        $("serSendText").value = it.text;
+        $("serHex").checked = !!it.hex;
+        $("serNL").checked = it.append_nl !== false;
+        sendSerial();
+      });
+    });
+    $("serQuickList").querySelectorAll("button[data-quickdel]").forEach(b=>{
+      b.addEventListener("click",()=>delQuick(parseInt(b.dataset.quickdel,10)));
+    });
+  }catch(e){ /* 忽略 */ }
+}
+async function addQuick(){
+  const text = $("serSendText").value;
+  if(!text.trim()){ $("serMsg").textContent = "发送框是空的，先写点内容再存"; return }
+  try{
+    const d = await (await api("/api/serial/quick",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({add:{name:$("serQuickName").value, text, hex:$("serHex").checked,
+                                append_nl:$("serNL").checked}})})).json();
+    $("serMsg").textContent = d.message;
+    loadQuick();
+  }catch(e){ $("serMsg").textContent = "保存失败：" + e.message }
+}
+async function delQuick(i){
+  try{
+    const d = await (await api("/api/serial/quick",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({del:i})})).json();
+    $("serMsg").textContent = d.message;
+    loadQuick();
+  }catch(e){ $("serMsg").textContent = "删除失败：" + e.message }
+}
+async function checksumCalc(append){
+  const box = $("serCkResult");
+  box.innerHTML = '<span class="muted">计算中…</span>';
+  try{
+    const d = await (await api("/api/serial/checksum",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({data_hex:$("serCkData").value, append:append ? "crc16_modbus" : null})})).json();
+    const rows = Object.values(d.checksums||{}).map(c=>
+      `<div style="display:flex;gap:10px;font-size:12.5px"><span style="min-width:150px">${esc(c.name)}</span>
+        <code>${esc(c.hex)}</code><span class="muted">小端 ${esc(c.bytes_le)} / 大端 ${esc(c.bytes_be)}</span></div>`);
+    let extra = "";
+    if(d.appended){
+      extra = `<div class="note" style="margin-top:var(--s2)"><span>${esc(d.appended_note)}：</span>
+        <code style="font-size:12px">${esc(d.appended)}</code>
+        <button class="ghost" id="btnSerSendFrame" style="margin-left:var(--s2)">发送这帧</button></div>`;
+    }
+    box.innerHTML = `<div class="muted" style="font-size:12.5px">共 ${d.length} 字节</div>` +
+      rows.join("") + extra;
+    const sb = $("btnSerSendFrame");
+    if(sb) sb.addEventListener("click",()=>{
+      $("serSendText").value = d.appended;
+      $("serHex").checked = true;
+      sendSerial();
+    });
+  }catch(e){ box.innerHTML = `<div class="note err"><span>${esc(e.message)}</span></div>` }
+}
+if($("btnSerPeriodicStart")) $("btnSerPeriodicStart").addEventListener("click",()=>periodicSend(true));
+if($("btnSerPeriodicStop")) $("btnSerPeriodicStop").addEventListener("click",()=>periodicSend(false));
+if($("btnSerQuickAdd")) $("btnSerQuickAdd").addEventListener("click",addQuick);
+if($("btnSerCkCalc")) $("btnSerCkCalc").addEventListener("click",()=>checksumCalc(false));
+if($("btnSerCkAppend")) $("btnSerCkAppend").addEventListener("click",()=>checksumCalc(true));
+
 if($("btnSerFrameUse")) $("btnSerFrameUse").addEventListener("click",()=>useFrame(true));
 if($("btnSerFrameOff")) $("btnSerFrameOff").addEventListener("click",()=>useFrame(false));
 if($("btnSerFrameLoad")) $("btnSerFrameLoad").addEventListener("click",loadFrameJson);

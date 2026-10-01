@@ -205,7 +205,45 @@ def main() -> int:
     r = client.post("/api/serial/frames/use", json={"off": True}).json()
     check("停用帧解析 → ok 且回到按行解析", r["ok"] and r["active"] == "", str(r)[:60])
 
-    print("\n== ⑩ 关闭 ==")
+    print("\n== ⑩ 定时发送 / 快捷指令 / 校验计算接口 ==")
+    import os as _os
+    import tempfile as _tf2
+    _os.environ["CONTEST_QUICK_FILE"] = str(Path(_tf2.mkdtemp()) / "q.json")
+    webapp._SERIAL = SerialAssistant()
+
+    r = client.post("/api/serial/periodic", json={"stop": True}).json()
+    check("没在定时发送时点停止 → 说明情况", "没有在定时发送" in r["message"], r["message"][:50])
+    r = client.post("/api/serial/periodic", json={"text": "ATK", "interval_ms": 100}).json()
+    check("未打开串口就定时发送 → ok=False 说人话",
+          r["ok"] is False and "打开" in r["message"], r["message"][:60])
+
+    r = client.post("/api/serial/quick", json={"add": {"name": "A", "text": "1,2"}}).json()
+    check("★ 加一条快捷指令 → ok（曾经因缺 import json 静默失败）", r["ok"] and len(r["items"]) == 1,
+          str(r)[:80])
+    check("GET 能读回来", len(client.get("/api/serial/quick").json()["items"]) == 1)
+    r = client.post("/api/serial/quick", json={"del": 0}).json()
+    check("按序号删除", r["ok"] and r["items"] == [], str(r)[:70])
+    r = client.post("/api/serial/quick", json={"items": [{"text": "X"}, {"text": ""}]}).json()
+    check("整表保存会过滤空内容", r["ok"] and len(r["items"]) == 1, str(r)[:70])
+
+    d = client.post("/api/serial/checksum", json={"data_hex": "AA 55 01 02"}).json()
+    check("校验接口给出 5 种算法", len(d["checksums"]) == 5, str(list(d.get("checksums", {}))))
+    check("★ CRC16-MODBUS 用已知向量校准（'123456789' → 0x4B37）",
+          client.post("/api/serial/checksum",
+                      json={"data_hex": "31 32 33 34 35 36 37 38 39"}).json()
+          ["checksums"]["crc16_modbus"]["hex"] == "0x4B37")
+    d = client.post("/api/serial/checksum",
+                    json={"data_hex": "AA 55 01 02", "append": "crc16_modbus"}).json()
+    check("追加校验 → 给出完整帧（含小端/大端字节）",
+          d["appended"].startswith("AA 55 01 02 ") and len(d["appended"].split()) == 6,
+          d.get("appended", ""))
+    bad = client.post("/api/serial/checksum", json={"data_hex": "ZZ"})
+    check("十六进制写错 → 400 说人话", bad.status_code == 400 and "十六进制" in bad.text,
+          bad.text[:60])
+    bad = client.post("/api/serial/checksum", json={"data_hex": ""})
+    check("空数据 → 400", bad.status_code == 400, bad.text[:50])
+
+    print("\n== ⑪ 关闭 ==")
     r = client.post("/api/serial/close").json()
     check("关闭串口 → ok", r["ok"] is True, str(r)[:60])
     check("关闭后 status.is_open=False", client.get("/api/serial/status").json()["is_open"] is False)

@@ -26,6 +26,7 @@
 """
 from __future__ import annotations
 
+import json
 import queue
 import re
 import threading
@@ -282,6 +283,9 @@ class SerialAssistant:
         self._outliers = 0                                      # 被守卫拦下的坏点数
         # ★ 帧解析（二进制协议）：启用后收到的字节走 FrameDecoder，而不是按行解析
         self._decoder = None
+        # ★ 定时发送（调参时反复发同一条指令）与快捷指令
+        self._periodic = None            # {"thread":..., "stop": threading.Event(), ...}
+        self._periodic_info = {}         # 给界面看的状态
         self._dropped = 0                                      # 被滑窗挤掉的最旧点数
 
         self._rec_file = None
@@ -313,6 +317,137 @@ class SerialAssistant:
         return self._rec_path
 
     # ── 打开 / 关闭 ──────────────────────────────────────────────────────
+    # ── 定时发送 + 快捷指令（调参时反复发同一条指令）──────────────────
+    def start_periodic(self, text, interval_ms: int = 1000, hex_mode: bool = False,
+                       append_nl: bool = True, repeat: int = 0) -> str:
+        """定时发送：每隔 interval_ms 毫秒发一次。`repeat=0` 表示一直发到手动停止。
+
+        ★ 安全边界：最快 10 ms（更快会淹没单片机/USB 转串口）；串口关闭自动停。
+        """
+        if not self.is_open:
+            return "[错误] 串口没打开，先打开串口再定时发送"
+        if self._periodic is not None:
+            return "[错误] 已经在定时发送了，先点停止再改参数"
+        try:
+            ms = int(interval_ms)
+        except Exception:
+            return f"[错误] 间隔必须是整数毫秒，现在是 {interval_ms!r}"
+        ms = max(10, ms)
+        payload = str(text)
+        if not payload.strip():
+            return "[错误] 定时发送的内容是空的"
+        if not hex_mode and append_nl and not payload.endswith("\n"):
+            payload += "\r\n"
+        stop = threading.Event()
+        info = {"interval_ms": ms, "sent": 0, "text": str(text), "hex": bool(hex_mode),
+                "repeat": int(repeat or 0), "running": True}
+        self._periodic = {"stop": stop, "info": info}
+        self._periodic_info = info
+
+        def loop():
+            import time as _t
+            while not stop.is_set():
+                if not self.is_open:
+                    info["running"] = False
+                    self._push_event("error", "[提示] 串口已关闭，定时发送自动停止")
+                    break
+                msg = self.send(payload, hex_mode=hex_mode)
+                if msg.startswith("[错误]"):
+                    info["running"] = False
+                    self._push_event("error", f"[提示] 定时发送已停止：{msg}")
+                    break
+                info["sent"] += 1
+                if info["repeat"] and info["sent"] >= info["repeat"]:
+                    break
+                _t.sleep(ms / 1000.0)
+            info["running"] = False
+            self._periodic = None
+
+        th = threading.Thread(target=loop, name="定时发送", daemon=True)
+        self._periodic["thread"] = th
+        th.start()
+        tail = f"，共 {repeat} 次" if repeat else "，一直发到手动停止"
+        return f"已开始定时发送：每 {ms} ms 一次{tail}（发送内容：{payload.strip()[:40]}）"
+
+    def stop_periodic(self) -> str:
+        """停止定时发送。"""
+        if self._periodic is None:
+            return "当前没有在定时发送"
+        info = self._periodic["info"]
+        self._periodic["stop"].set()
+        sent = info.get("sent", 0)
+        self._periodic = None
+        return f"已停止定时发送（本次共发 {sent} 次）"
+
+    def periodic_state(self) -> dict:
+        """定时发送状态（界面显示用）。"""
+        if self._periodic is None:
+            return {"running": False, "sent": (self._periodic_info or {}).get("sent", 0)}
+        return dict(self._periodic["info"])
+
+    @staticmethod
+    def _quick_file() -> Path:
+        import os
+        custom = os.environ.get("CONTEST_QUICK_FILE")
+        p = Path(custom) if custom else (Path.home() / ".contest-workbench" / "quick-commands.json")
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        return p
+
+    def list_quick(self) -> list:
+        """快捷指令列表（用户自己攒的常用指令）。"""
+        try:
+            data = json.loads(self._quick_file().read_text(encoding="utf-8"))
+            return [x for x in data if isinstance(x, dict) and x.get("text")]
+        except Exception:
+            return []
+
+    def save_quick(self, items) -> str:
+        """整表保存快捷指令。"""
+        if not isinstance(items, list):
+            return "[错误] 快捷指令应该是一个数组"
+        clean = []
+        for x in items:
+            if not isinstance(x, dict) or not str(x.get("text") or "").strip():
+                continue
+            clean.append({"name": str(x.get("name") or str(x["text"])[:16]),
+                          "text": str(x["text"]), "hex": bool(x.get("hex", False)),
+                          "append_nl": bool(x.get("append_nl", True))})
+        try:
+            self._quick_file().write_text(json.dumps(clean, ensure_ascii=False, indent=2),
+                                          encoding="utf-8")
+        except Exception as e:
+            return f"[错误] 保存快捷指令失败：{type(e).__name__}: {e}"
+        return f"已保存 {len(clean)} 条快捷指令"
+
+    def add_quick(self, name, text, hex_mode: bool = False, append_nl: bool = True) -> str:
+        """追加一条快捷指令。"""
+        if not str(text or "").strip():
+            return "[错误] 指令内容不能为空"
+        items = self.list_quick()
+        items.append({"name": str(name or str(text)[:16]), "text": str(text),
+                      "hex": bool(hex_mode), "append_nl": bool(append_nl)})
+        return self.save_quick(items)
+
+    def del_quick(self, index_or_name) -> str:
+        """按序号或名字删除一条快捷指令。"""
+        items = self.list_quick()
+        if not items:
+            return "[错误] 现在还没有快捷指令"
+        target = str(index_or_name)
+        keep, removed = [], None
+        for i, x in enumerate(items):
+            if removed is None and (target == str(i) or target == str(x.get("name"))):
+                removed = x
+                continue
+            keep.append(x)
+        if removed is None:
+            return f"[错误] 没找到快捷指令：{index_or_name}（可用序号或名字）"
+        self.save_quick(keep)
+        return f"已删除快捷指令「{removed.get('name')}」"
+
     # ── DTR / RTS 控制（一键下载电路、复位、进 BootLoader）──────────────
     def line_state(self) -> dict:
         """当前 DTR/RTS 电平（True=高）。没打开串口时返回空。"""
@@ -826,6 +961,7 @@ class SerialAssistant:
                 "bad_lines": self._bad_lines,
             "outliers": self._outliers,
             "frame": self.frame_stats(),
+            "periodic": self.periodic_state(),
                 "dropped": self._dropped,
                 "buffer_bytes": len(self._buf),
                 "pending_events": len(self._events),

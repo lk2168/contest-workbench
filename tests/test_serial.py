@@ -606,6 +606,59 @@ def main() -> int:
         a.close()
     finally:
         set_serial_backend(_旧)
+
+    print("\n== 定时发送 + 快捷指令 ==")
+    import tempfile as _tf
+    import os as _os
+    _旧快 = _os.environ.get("CONTEST_QUICK_FILE")
+    _os.environ["CONTEST_QUICK_FILE"] = str(Path(_tf.mkdtemp()) / "quick.json")
+    try:
+        _后端2 = 造后端()
+        _旧2 = set_serial_backend(_后端2)
+        try:
+            a2 = SerialAssistant()
+            check("未打开串口就定时发送 → 人话错误",
+                  a2.start_periodic("ATK", 100).startswith("[错误]"))
+            check("没在定时发送时点停止 → 说明情况", "没有在定时发送" in a2.stop_periodic())
+            a2.open("COM7")
+            check("内容为空 → 拒绝", a2.start_periodic("   ", 100).startswith("[错误]"))
+            check("间隔非法 → 拒绝", a2.start_periodic("ATK", "abc").startswith("[错误]"))
+            msg = a2.start_periodic("ATK", 20, repeat=3)
+            check("★ 开始定时发送 → 人话提示（含间隔与次数）",
+                  "已开始定时发送" in msg and "20 ms" in msg and "3 次" in msg, msg)
+            check("重复开始 → 被拒绝（先停再改）",
+                  a2.start_periodic("ATK", 50).startswith("[错误]"))
+            time.sleep(0.35)
+            st = a2.periodic_state()
+            check("★ 定时发送真的发出去了（repeat=3 → 恰 3 次）", st.get("sent") == 3, str(st))
+            ser2 = a2._ser
+            check("发的内容带上了换行", bytes(ser2.收到的写入) == b"ATK\r\n" * 3,
+                  repr(bytes(ser2.收到的写入))[:60])
+            check("跑完自动结束（running=False）", a2.periodic_state().get("running") is False)
+
+            # 快捷指令
+            check("一开始没有快捷指令", a2.list_quick() == [])
+            msg = a2.add_quick("加速", "Kp=1.2", append_nl=False)
+            check("★ 加一条并真的存下来（曾经因为没 import json 静默失败）",
+                  "已保存 1 条" in msg and len(a2.list_quick()) == 1, msg)
+            check("字段完整（name/text/hex/append_nl）",
+                  set(a2.list_quick()[0]) == {"name", "text", "hex", "append_nl"},
+                  str(a2.list_quick()[0]))
+            a2.add_quick("", "STOP")
+            check("再加一条 → 2 条，且能按序号删除",
+                  len(a2.list_quick()) == 2 and "已删除" in a2.del_quick(0)
+                  and len(a2.list_quick()) == 1)
+            check("按名字删除", "已删除" in a2.del_quick("STOP") and a2.list_quick() == [])
+            check("删不存在的 → 人话错误", a2.del_quick("没有这个").startswith("[错误]"))
+            check("空内容的指令不保存", "已保存 0 条" in a2.save_quick([{"text": "  "}]))
+            a2.close()
+        finally:
+            set_serial_backend(_旧2)
+    finally:
+        if _旧快 is None:
+            _os.environ.pop("CONTEST_QUICK_FILE", None)
+        else:
+            _os.environ["CONTEST_QUICK_FILE"] = _旧快
     set_serial_backend(None)
     print("\n" + "=" * 52)
     print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")

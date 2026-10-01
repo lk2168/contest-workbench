@@ -337,6 +337,91 @@ def api_serial_frames_test(payload: dict) -> JSONResponse:
                                  else "这段数据里没切出完整帧（检查帧头/长度字段/校验设置）"})
 
 
+@app.post("/api/serial/periodic")
+def api_serial_periodic(payload: dict) -> JSONResponse:
+    """定时发送：{"text":..., "interval_ms":1000, "hex_mode":false, "repeat":0}
+    或 {"stop": true} 停止。"""
+    p = payload or {}
+    a = _serial()
+    if p.get("stop"):
+        msg = a.stop_periodic()
+    else:
+        msg = a.start_periodic(p.get("text", ""), p.get("interval_ms", 1000),
+                               bool(p.get("hex_mode", False)),
+                               bool(p.get("append_nl", True)), int(p.get("repeat") or 0))
+    return JSONResponse({"ok": not msg.startswith(ERROR_PREFIX), "message": msg,
+                         "state": a.periodic_state()})
+
+
+@app.get("/api/serial/quick")
+def api_serial_quick_list() -> JSONResponse:
+    """快捷指令列表（常用指令，可保存）。"""
+    return JSONResponse({"items": _serial().list_quick()})
+
+
+@app.post("/api/serial/quick")
+def api_serial_quick_save(payload: dict) -> JSONResponse:
+    """整表保存 / 追加一条 / 删除一条。
+
+    - {"items": [...]} → 整表保存
+    - {"add": {"name":..., "text":..., "hex":false, "append_nl":true}} → 追加
+    - {"del": 0} 或 {"del": "名字"} → 删除
+    """
+    p = payload or {}
+    a = _serial()
+    if "items" in p:
+        msg = a.save_quick(p.get("items"))
+    elif "add" in p:
+        item = p.get("add") or {}
+        msg = a.add_quick(item.get("name"), item.get("text"), bool(item.get("hex", False)),
+                          bool(item.get("append_nl", True)))
+    elif "del" in p:
+        msg = a.del_quick(p.get("del"))
+    else:
+        msg = "[错误] 要说清做什么：items（整表）/ add（追加）/ del（删除）"
+    return JSONResponse({"ok": not msg.startswith(ERROR_PREFIX), "message": msg,
+                         "items": a.list_quick()})
+
+
+@app.post("/api/serial/checksum")
+def api_serial_checksum(payload: dict) -> JSONResponse:
+    """校验计算：给一段十六进制数据，算出各种校验值；可顺手把某个校验追加成完整帧。
+
+    `{"data_hex": "AA 55 01 02", "append": "crc16_modbus"}` → 返回各校验值与追加后的整帧。
+    """
+    from ..frame_parser import CHECKSUMS
+    import struct as _struct
+
+    p = payload or {}
+    s = "".join(str(p.get("data_hex") or "").replace(",", " ").replace("0x", " ")
+                .replace("0X", " ").split())
+    try:
+        data = bytes.fromhex(s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="十六进制写错了（示例：AA 55 01 02）")
+    if not data:
+        raise HTTPException(status_code=400, detail="请先填一段十六进制数据")
+    out = {}
+    for key, (name, fn) in CHECKSUMS.items():
+        if fn is None:
+            continue
+        width = 2 if key.startswith("crc16") else 2
+        val = fn(data)
+        out[key] = {"name": name, "value": val, "hex": f"0x{val:0{width}X}",
+                    "bytes_le": val.to_bytes(2 if key.startswith("crc16") else 1, "little").hex(" ").upper(),
+                    "bytes_be": val.to_bytes(2 if key.startswith("crc16") else 1, "big").hex(" ").upper()}
+    resp = {"ok": True, "length": len(data), "checksums": out, "whole_frame": data.hex(" ").upper()}
+    want = p.get("append")
+    if want and want in out:
+        fn = CHECKSUMS[want][1]
+        size = 2 if want.startswith("crc16") else 1
+        endian = str(p.get("endian") or "little").lower()
+        extra = fn(data).to_bytes(size, "big" if endian == "big" else "little")
+        resp["appended"] = (data + extra).hex(" ").upper()
+        resp["appended_note"] = f"已在末尾追加 {out[want]['name']}（{endian} 端）"
+    return JSONResponse(resp)
+
+
 @app.post("/api/serial/close")
 def api_serial_close() -> JSONResponse:
     return JSONResponse({"ok": True, "message": _serial().close()})
@@ -431,6 +516,7 @@ def api_serial_stream(limit: int = 0) -> StreamingResponse:
                             "is_open": snap.get("is_open", False),
                             "recording": snap.get("recording", False),
                             "frame": snap.get("frame", {}),
+                            "periodic": snap.get("periodic", {}),
                             "port": snap.get("port"), "baudrate": snap.get("baudrate")})
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             sent += 1
