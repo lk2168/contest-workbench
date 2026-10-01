@@ -76,6 +76,10 @@ jobs:
       - name: 帧解析（离线）
         run: python tests/test_frame.py
 
+      # STM32 串口 ISP（用假 BootLoader，不需要硬件）
+      - name: STM32 ISP（离线）
+        run: python tests/test_stm32_isp.py
+
       - name: 命令行空跑（不调用模型）
         run: |
           python cli.py --version
