@@ -56,6 +56,10 @@ jobs:
       - name: 追问与供应商（离线，假 LLM）
         run: python tests/test_ask.py
 
+      # 知识点映射（「这题要会什么」）：含知识表自身的质量闸门（判据必须可自测）
+      - name: 知识点映射（离线）
+        run: python tests/test_learning.py
+
       - name: 命令行空跑（不调用模型）
         run: |
           python cli.py --version

@@ -76,7 +76,8 @@ def kb_candidates(subdir: str) -> list[Path]:
 
 
 # 通用工具：所有分区都能用
-_COMMON_TOOLS = ("list_shiti", "read_shiti", "search_qa", "search_tiku", "write_report")
+_COMMON_TOOLS = ("list_shiti", "read_shiti", "search_qa", "search_tiku",
+                 "suggest_learning", "write_report")
 # 电赛专属：阶跃响应指标 + PID 建议
 _TUNING_TOOLS = ("analyze_step_data",)
 

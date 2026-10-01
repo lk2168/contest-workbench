@@ -251,6 +251,15 @@ ul.files .acts{display:flex;align-items:center;gap:var(--s4);margin-left:var(--s
 .note.warn{background:var(--warn-bg);color:var(--warn-fg)}
 .note.err{background:var(--err-bg);color:var(--err-fg)}
 .note svg{width:16px;height:16px;flex:none;margin-top:1px}
+/* 「这题要会什么」面板 */
+.learn-item{border-top:1px solid var(--line);padding-top:var(--s3);margin-top:var(--s3)}
+.learn-item:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.learn-item h4{font-size:14px;margin-bottom:var(--s2)}
+ul.check{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px}
+ul.check label{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--ink2);cursor:pointer;line-height:1.5}
+ul.check input{margin-top:3px;flex:none}
+a.quiet{text-decoration:none;display:inline-flex;align-items:center}
+.btncopy{min-width:52px}
 footer{border-top:1px solid var(--line);margin-top:var(--s10);padding:var(--s6) 0 var(--s8);color:var(--ink3);font-size:12.5px}
 footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
 </style>
@@ -425,6 +434,22 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
             <span class="muted" style="font-size:12px" id="previewMeta"></span>
           </div>
           <div class="readout" id="preview">选好题目后这里显示题面。</div>
+        </div>
+        <!-- 这题要会什么：确定性知识点匹配，不调用模型、不花额度 -->
+        <div class="card" id="learnCard">
+          <div class="head" style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:var(--s2)">
+            <h3>这题要会什么</h3>
+            <span class="muted" style="font-size:12px">本地知识表匹配 · 不消耗额度</span>
+          </div>
+          <p class="muted" style="font-size:12.5px;margin-bottom:var(--s3)">
+            按题面关键词列出要掌握的知识点，每条给「自己怎么判断学会了」和「该搜什么词」。
+            搜索入口由程序拼好（不交给模型编链接）。
+          </p>
+          <div class="row-actions">
+            <button class="primary" id="btnLearn">看这题要会什么</button>
+            <button class="ghost" id="btnLearnAll">列全部知识块</button>
+          </div>
+          <div id="learnOut" style="margin-top:var(--s4)"></div>
         </div>
         <!-- 没找到题库时的引导（打包成 exe 后"题库放哪"对用户是黑盒，必须讲清楚） -->
         <div class="card" id="kbHelp" hidden>
@@ -921,6 +946,54 @@ async function runAsk(){
 }
 $("btnAsk").addEventListener("click",runAsk);
 $("askInput").addEventListener("keydown",e=>{ if(e.key==="Enter") runAsk(); });
+
+/* ── 这题要会什么（本地知识表匹配，不调用模型、不花额度）── */
+function renderLearn(d){
+  if(!d.items || !d.items.length){
+    $("learnOut").innerHTML=`<div class="note warn"><span>知识表里没有条目：<code>prompts/knowledge/${esc(d.domain)}.yaml</code>`
+      +`（知识点是可选增强，不影响分析与调参）</span></div>`;
+    return;
+  }
+  const head = d.by_keywords
+    ? `按题面关键词命中 <b>${d.matched}</b> / ${d.total} 个知识块，按命中度排序`
+    : `知识表共 <b>${d.total}</b> 块，先列前 ${d.matched} 块`;
+  $("learnOut").innerHTML = `<p class="muted" style="font-size:12.5px;margin-bottom:var(--s3)">${head}</p>`
+    + d.items.map((it,i)=>`<div class="learn-item">
+        <h4>${i+1}. ${esc(it['知识点'])}${(it['命中']&&it['命中'].length)
+          ?` <span class="muted" style="font-weight:400;font-size:12px">命中：${esc(it['命中'].join('、'))}</span>`:''}</h4>
+        ${(it['掌握判据']&&it['掌握判据'].length)
+          ?`<div class="muted" style="font-size:12.5px;margin:var(--s2) 0">能自测才算会（勾上表示你确认自己会了）</div>`
+           +`<ul class="check">`+it['掌握判据'].map(c=>`<li><label><input type="checkbox"> <span>${esc(c)}</span></label></li>`).join("")+`</ul>`:''}
+        ${(it['搜索词']&&it['搜索词'].length)
+          ?`<div class="muted" style="font-size:12.5px;margin:var(--s3) 0 var(--s2)">自己搜这些词（别只看视频，动手做一遍）</div>`
+           +it['搜索词'].map(w=>{
+              const l=(it['搜索链接']||{})[w]||{};
+              return `<div class="row" style="gap:var(--s2);align-items:center;margin-bottom:6px">
+                <code style="flex:1;min-width:0;overflow:auto;white-space:nowrap">${esc(w)}</code>
+                <button class="quiet btncopy" data-w="${esc(w)}">复制</button>
+                ${l.bilibili?`<a class="quiet" href="${l.bilibili}" target="_blank" rel="noopener">B站</a>`:''}
+                ${l.bing?`<a class="quiet" href="${l.bing}" target="_blank" rel="noopener">必应</a>`:''}
+              </div>`}).join(""):''}
+        ${(it['核验资源']&&it['核验资源'].length)
+          ?`<div class="muted" style="font-size:12.5px;margin-top:var(--s3)">核验过的资源（不写网址，避免失效）</div>`
+           +`<ul style="font-size:13px;padding-left:1.1em">`+it['核验资源'].map(r=>
+              `<li>${esc(r['类型']||'资源')}：${esc(r['名称']||'')}${r['备注']?`（${esc(r['备注'])}）`:''}</li>`).join("")+`</ul>`:''}
+      </div>`).join("");
+  document.querySelectorAll("#learnOut .btncopy").forEach(b=>b.addEventListener("click",async()=>{
+    try{ await navigator.clipboard.writeText(b.dataset.w); b.textContent="已复制"; setTimeout(()=>b.textContent="复制",1200) }catch(e){}
+  }));
+}
+async function loadLearning(useFile){
+  $("learnOut").innerHTML=`<span class="muted">匹配中…</span>`;
+  try{
+    const f = (useFile && state.cur && state.cur.file) ? state.cur.file : "";
+    const q = `/api/learning?domain=${encodeURIComponent(state.domain.id)}`
+            + (f ? `&file=${encodeURIComponent(f)}` : "");
+    renderLearn(await (await api(q)).json());
+  }catch(e){ $("learnOut").innerHTML=`<div class="note err"><span>匹配失败：${esc(e.message)}</span></div>` }
+}
+$("btnLearn").addEventListener("click",()=>loadLearning(true));
+$("btnLearnAll").addEventListener("click",()=>loadLearning(false));
 
 /* ── 调参 ── */
 $("goSample").addEventListener("click",async()=>{

@@ -11,6 +11,7 @@ import json
 from .shiti import list_shiti, read_shiti, search_qa, search_tiku
 from .report import write_report
 from .tuning import analyze_step_data
+from .learning import suggest_learning
 
 # 工具出错时的统一前缀（模型看得懂，接口层也好判断）
 ERROR_PREFIX = "[错误]"
@@ -23,6 +24,7 @@ _FUNCS = {
     "search_tiku": lambda **kw: search_tiku(**kw),
     "write_report": lambda **kw: write_report(**kw),
     "analyze_step_data": lambda **kw: analyze_step_data(**kw),
+    "suggest_learning": lambda **kw: suggest_learning(**kw),
 }
 
 # 给模型看的说明书
@@ -94,6 +96,26 @@ TOOL_SCHEMAS = [
                     "title": {"type": "string", "description": "图与标题的名字，可省略"},
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_learning",
+            "description": ("列出这道题**需要掌握的知识点**，每条含：自测判据（用户能自己判断有没有学会）、"
+                            "建议的搜索词、已核验的教材/手册资源。用在你写报告的『前置知识/学习路径』部分，"
+                            "或用户问『这题要会什么』『我还要补什么』时。内容是本地知识表按关键词确定性匹配的，"
+                            "**不要自己编造网址**——搜索入口由界面拼接。"),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string", "description": "精确的题目文件名（推荐，避免年份歧义）"},
+                    "name": {"type": "string", "description": "题号或关键词，如 'H'、'滚球'"},
+                    "text": {"type": "string", "description": "也可以直接给一段文字（如得分点描述）来匹配"},
+                    "max_items": {"type": "integer", "description": "最多返回几个知识块，默认 6"},
+                },
+                "required": [],
             },
         },
     },

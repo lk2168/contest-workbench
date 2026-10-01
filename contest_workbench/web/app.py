@@ -180,6 +180,30 @@ def api_reveal(payload: dict) -> JSONResponse:
         return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}", "path": str(d)})
 
 
+@app.get("/api/learning")
+def api_learning(file: str = "", name: str = "", domain: str = "diansai",
+                 max_items: int = 6) -> JSONResponse:
+    """「这题要会什么」：知识点 + 自测判据 + 搜索词 + 搜索入口（**确定性，不调用模型**）。
+
+    题面用 file 精确定位（避免年份歧义）；也可以只给 name。
+    """
+    import os
+    os.environ["CONTEST_DOMAIN"] = domain
+    _domain_or_400(domain)
+    from ..tools.learning import learning_for
+    text = ""
+    meta = None
+    if file or name:
+        got = call_tool("read_shiti", {"file": file, "name": name, "max_chars": 12000})
+        if is_error(got):
+            raise HTTPException(status_code=404, detail=got.replace(ERROR_PREFIX, "").strip())
+        text = got
+        if file:
+            meta = next((x for x in list_shiti_structured() if x["file"] == file), None)
+    data = learning_for(domain, text=text, top_k=max(1, min(int(max_items), 20)))
+    return JSONResponse({**data, "meta": meta})
+
+
 @app.get("/api/shiti-detail")
 def api_shiti_detail(file: str, domain: str = "diansai", max_chars: int = 12000) -> JSONResponse:
     """读某一道题的正文（用 file 精确定位，避免年份歧义）。"""
