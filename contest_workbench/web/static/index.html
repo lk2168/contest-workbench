@@ -260,6 +260,18 @@ ul.files .acts{display:flex;align-items:center;gap:var(--s4);margin-left:var(--s
 .note svg{width:16px;height:16px;flex:none;margin-top:1px}
 /* ★ 按钮别被 flex 压成逐字换行：中文没有词边界，压缩后会一个字一行。
    min-width:max-content 保证按钮至少能放下自己的文字，放不下就让 .row-actions 换行。 */
+/* 「进阶工具」折叠区：默认收起，让新手第一眼只看到常用功能 */
+details.adv{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--sh-sm);padding:var(--s5)}
+details.adv>summary{cursor:pointer;font-weight:600;color:var(--ink);list-style:none;
+  display:flex;align-items:center;gap:8px;line-height:1.5}
+details.adv>summary::-webkit-details-marker{display:none}
+details.adv>summary::before{content:"▸";color:var(--ink3);flex:none}
+details.adv[open]>summary::before{content:"▾"}
+details.adv[open]>summary{margin-bottom:var(--s2)}
+details.adv .card{box-shadow:none;border-radius:0;padding:var(--s4) 0 0;
+  border-top:1px solid var(--line);margin-top:var(--s4)}
+details.adv .card:first-of-type{border-top:none}
+
 .row-actions>button{min-width:max-content;white-space:nowrap}
 /* ★ 关键：`.work .row-actions` / `.card .row-actions` 里只写了 display:flex;gap，
    特异性比 .row-actions{flex-wrap:wrap} 高，会把换行覆盖掉 → 内容不换行、直接撑破卡片。
@@ -470,6 +482,7 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
     <!-- ★ 串口面板本体：#serPanel 会在「电赛专区 → 串口采数」和「工具箱 → 串口助手」
          两个宿主之间被搬移（DOM 搬移不丢事件监听），代码只有一份 -->
     <div class="work" id="serPanel">
+      
       <div class="stack">
         <div class="card">
           <h3 style="margin-bottom:var(--s3)">串口连接</h3>
@@ -498,82 +511,7 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
             <button class="primary" id="btnSerSend">发送</button>
           </div>
         </div>
-          <div class="card">
-            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
-              <h3>定时发送</h3>
-              <span class="muted" style="font-size:12px" id="serPeriodicState">未开始</span>
-            </div>
-            <div class="row-actions">
-              <input id="serPeriodicMs" type="number" value="1000" min="10" step="50"
-                     style="width:100px" title="间隔（毫秒）">
-              <span class="muted" style="font-size:12.5px;align-self:center">毫秒/次</span>
-              <input id="serPeriodicTimes" type="number" value="0" min="0" style="width:80px"
-                     title="发多少次，0 = 一直发">
-              <span class="muted" style="font-size:12.5px;align-self:center">次（0=一直）</span>
-              <button class="primary" id="btnSerPeriodicStart">开始</button>
-              <button class="ghost" id="btnSerPeriodicStop">停止</button>
-            </div>
-            <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
-              把「发送」框里的内容按间隔重复发（调参时反复发同一条指令用）。
-              板子回显的数据照常进曲线与指标。最快 10 ms。
-            </p>
-          </div>
-
-          <div class="card">
-            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
-              <h3>快捷指令</h3>
-              <span class="muted" style="font-size:12px" id="serQuickHint">—</span>
-            </div>
-            <div class="row-actions">
-              <input id="serQuickName" placeholder="名字（可空）" style="width:130px">
-              <button class="ghost" id="btnSerQuickAdd">把发送框内容存为快捷指令</button>
-            </div>
-            <div id="serQuickList" style="margin-top:var(--s3)"></div>
-          </div>
-
-          <div class="card">
-            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
-              <h3>校验计算 / 组帧</h3>
-              <span class="muted" style="font-size:12px">和校验/CRC 一次算齐</span>
-            </div>
-            <div class="row-actions">
-              <input id="serCkData" placeholder="十六进制：AA 55 01 02" style="flex:1;min-width:150px">
-              <button class="ghost" id="btnSerCkCalc">算校验</button>
-              <button class="ghost" id="btnSerCkAppend">追加校验成整帧</button>
-            </div>
-            <div id="serCkResult" style="margin-top:var(--s2)"></div>
-          </div>
-
-          <div class="card">
-            <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
-              <h3>复位 / BootLoader（DTR/RTS）</h3>
-              <span class="muted" style="font-size:12px" id="serLines">电平：—</span>
-            </div>
-            <div class="row-actions">
-              <select id="serPreset" style="min-width:250px"></select>
-              <button class="ghost" id="btnSerProbe">自动探测这 12 种</button>
-            </div>
-            <div class="row-actions" style="margin-top:var(--s3)">
-              <button class="primary" id="btnSerResetRun">复位并运行</button>
-              <button class="ghost" id="btnSerResetBoot">复位进 BootLoader</button>
-            </div>
-            <div class="row-actions" style="margin-top:var(--s3)">
-              <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
-                <input type="checkbox" id="serDtrHigh"> DTR 高
-              </label>
-              <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
-                <input type="checkbox" id="serRtsHigh"> RTS 高
-              </label>
-              <button class="ghost" id="btnSerApplyLines">把电平应用到板子</button>
-            </div>
-            <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
-              ★ 不同 USB 转串口芯片 / 一键下载电路的极性**可能相反**，照文档猜常常是错的。
-              点「自动探测这 12 种」会逐个实测，直接告诉你哪种能让板子跑起来、哪种能进 BootLoader。
-            </p>
-            <div id="serProbeResult" style="margin-top:var(--s3)"></div>
-          </div>
-
-          <div class="card">
+        <div class="card">
             <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
               <h3>接收</h3>
             <span class="muted" style="font-size:12px" id="serStats">—</span>
@@ -583,7 +521,82 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
             <button class="ghost" id="btnSerClear">清空显示</button>
           </div>
         </div>
-      </div>
+          <details class="adv">
+            <summary>进阶工具（新手可以先跳过）：定时发送 / 快捷指令 / 校验和组帧 / 复位进 BootLoader</summary>
+                    <div class="card">
+                        <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+                          <h3>定时发送</h3>
+                          <span class="muted" style="font-size:12px" id="serPeriodicState">未开始</span>
+                        </div>
+                        <div class="row-actions">
+                          <input id="serPeriodicMs" type="number" value="1000" min="10" step="50"
+                                 style="width:100px" title="间隔（毫秒）">
+                          <span class="muted" style="font-size:12.5px;align-self:center">毫秒/次</span>
+                          <input id="serPeriodicTimes" type="number" value="0" min="0" style="width:80px"
+                                 title="发多少次，0 = 一直发">
+                          <span class="muted" style="font-size:12.5px;align-self:center">次（0=一直）</span>
+                          <button class="primary" id="btnSerPeriodicStart">开始</button>
+                          <button class="ghost" id="btnSerPeriodicStop">停止</button>
+                        </div>
+                        <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
+                          把「发送」框里的内容按间隔重复发（调参时反复发同一条指令用）。
+                          板子回显的数据照常进曲线与指标。最快 10 ms。
+                        </p>
+                      </div>
+                    <div class="card">
+                        <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+                          <h3>快捷指令</h3>
+                          <span class="muted" style="font-size:12px" id="serQuickHint">—</span>
+                        </div>
+                        <div class="row-actions">
+                          <input id="serQuickName" placeholder="名字（可空）" style="width:130px">
+                          <button class="ghost" id="btnSerQuickAdd">把发送框内容存为快捷指令</button>
+                        </div>
+                        <div id="serQuickList" style="margin-top:var(--s3)"></div>
+                      </div>
+                    <div class="card">
+                        <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+                          <h3>校验计算 / 组帧</h3>
+                          <span class="muted" style="font-size:12px">和校验/CRC 一次算齐</span>
+                        </div>
+                        <div class="row-actions">
+                          <input id="serCkData" placeholder="十六进制：AA 55 01 02" style="flex:1;min-width:150px">
+                          <button class="ghost" id="btnSerCkCalc">算校验</button>
+                          <button class="ghost" id="btnSerCkAppend">追加校验成整帧</button>
+                        </div>
+                        <div id="serCkResult" style="margin-top:var(--s2)"></div>
+                      </div>
+                    <div class="card">
+                        <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+                          <h3>复位 / BootLoader（DTR/RTS）</h3>
+                          <span class="muted" style="font-size:12px" id="serLines">电平：—</span>
+                        </div>
+                        <div class="row-actions">
+                          <select id="serPreset" style="min-width:250px"></select>
+                          <button class="ghost" id="btnSerProbe">自动探测这 12 种</button>
+                        </div>
+                        <div class="row-actions" style="margin-top:var(--s3)">
+                          <button class="primary" id="btnSerResetRun">复位并运行</button>
+                          <button class="ghost" id="btnSerResetBoot">复位进 BootLoader</button>
+                        </div>
+                        <div class="row-actions" style="margin-top:var(--s3)">
+                          <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+                            <input type="checkbox" id="serDtrHigh"> DTR 高
+                          </label>
+                          <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+                            <input type="checkbox" id="serRtsHigh"> RTS 高
+                          </label>
+                          <button class="ghost" id="btnSerApplyLines">把电平应用到板子</button>
+                        </div>
+                        <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
+                          ★ 不同 USB 转串口芯片 / 一键下载电路的极性**可能相反**，照文档猜常常是错的。
+                          点「自动探测这 12 种」会逐个实测，直接告诉你哪种能让板子跑起来、哪种能进 BootLoader。
+                        </p>
+                        <div id="serProbeResult" style="margin-top:var(--s3)"></div>
+                      </div>
+          </details>
+
+        </div>
       <div class="stack">
         <div class="card">
           <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
@@ -596,36 +609,6 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
           </p>
         </div>
         <div class="card">
-          <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
-            <h3>帧解析（二进制协议）</h3>
-            <span class="muted" style="font-size:12px" id="serFrameStats">未启用（按行解析）</span>
-          </div>
-          <div class="row-actions">
-            <select id="serFrameSel" style="min-width:230px"></select>
-            <button class="primary" id="btnSerFrameUse">启用</button>
-            <button class="ghost" id="btnSerFrameOff">停用</button>
-          </div>
-          <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
-            板子发的是二进制帧（帧头 / 长度 / CRC）时用它：解析出来的字段会<b>直接变成数据点</b>，
-            照样能画曲线、算指标、出 PID 建议。
-          </p>
-          <details style="margin-top:var(--s3)">
-            <summary class="muted" style="cursor:pointer;font-size:12.5px">自定义帧格式（JSON）/ 试解析</summary>
-            <textarea id="serFrameJson" spellcheck="false"
-              style="width:100%;height:150px;margin-top:var(--s2);font-family:ui-monospace,Consolas,monospace;font-size:12px"
-              placeholder='{"name":"我的板子","start":"AA 55", ...}'></textarea>
-            <div class="row-actions" style="margin-top:var(--s2)">
-              <button class="ghost" id="btnSerFrameLoad">载入选中格式</button>
-              <button class="ghost" id="btnSerFrameSave">保存并启用</button>
-              <input id="serFrameSample" placeholder="示例数据（十六进制）：AA 55 0D 0A D7 23 3D ..."
-                     style="flex:1;min-width:170px">
-              <button class="ghost" id="btnSerFrameTest">试解析</button>
-            </div>
-            <div id="serFramePreview" style="margin-top:var(--s2)"></div>
-          </details>
-        </div>
-
-        <div class="card">
           <h3 style="margin-bottom:var(--s3)">数据 → 指标（一键送调参助手）</h3>
           <div class="row-actions">
             <input id="serTarget" placeholder="目标值（可选，如 1.0）">
@@ -635,11 +618,43 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
           </div>
           <div id="serReport" style="margin-top:var(--s3)"></div>
         </div>
+          <details class="adv">
+            <summary>进阶工具：帧解析（板子发二进制协议帧时才需要）</summary>
+                    <div class="card">
+                      <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+                        <h3>帧解析（二进制协议）</h3>
+                        <span class="muted" style="font-size:12px" id="serFrameStats">未启用（按行解析）</span>
+                      </div>
+                      <div class="row-actions">
+                        <select id="serFrameSel" style="min-width:230px"></select>
+                        <button class="primary" id="btnSerFrameUse">启用</button>
+                        <button class="ghost" id="btnSerFrameOff">停用</button>
+                      </div>
+                      <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
+                        板子发的是二进制帧（帧头 / 长度 / CRC）时用它：解析出来的字段会<b>直接变成数据点</b>，
+                        照样能画曲线、算指标、出 PID 建议。
+                      </p>
+                      <details style="margin-top:var(--s3)">
+                        <summary class="muted" style="cursor:pointer;font-size:12.5px">自定义帧格式（JSON）/ 试解析</summary>
+                        <textarea id="serFrameJson" spellcheck="false"
+                          style="width:100%;height:150px;margin-top:var(--s2);font-family:ui-monospace,Consolas,monospace;font-size:12px"
+                          placeholder='{"name":"我的板子","start":"AA 55", ...}'></textarea>
+                        <div class="row-actions" style="margin-top:var(--s2)">
+                          <button class="ghost" id="btnSerFrameLoad">载入选中格式</button>
+                          <button class="ghost" id="btnSerFrameSave">保存并启用</button>
+                          <input id="serFrameSample" placeholder="示例数据（十六进制）：AA 55 0D 0A D7 23 3D ..."
+                                 style="flex:1;min-width:170px">
+                          <button class="ghost" id="btnSerFrameTest">试解析</button>
+                        </div>
+                        <div id="serFramePreview" style="margin-top:var(--s2)"></div>
+                      </details>
+                    </div>
+          </details>
       </div>
     </div>
   </section>
 
-  <section id="viewDomain" class="wrap" hidden>
+<section id="viewDomain" class="wrap" hidden>
     <div style="padding-top:var(--s6)">
       <button class="link" id="backHome">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -746,10 +761,7 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
     <!-- 串口采数：面板本体会被搬进这里（见 mountSerial）。
        ★ 不要套外层 card —— 套了以后可用宽度变窄，行内控件容易被挤到溢出。 -->
   <div id="panelSerial" class="work" hidden role="tabpanel">
-    <p class="muted" style="grid-column:1/-1;margin:0 0 var(--s4)">
-      采数据 → 一键算指标 → 出 PID 建议，全程不用复制粘贴。
-      数据从串口按行读入（每行两个数字即可，如 <code>0.04,0.55</code>）。
-    </p>
+    
     <div id="serHostDomain" style="grid-column:1/-1"></div>
   </div>
 
