@@ -409,7 +409,9 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
       <div class="cards">
         <button class="dcard" id="toolsSerial">
           <div class="dtop"><span class="dname">串口助手</span><span class="chip">已就绪</span></div>
-          <p class="muted">列端口 / 收发 / 实时曲线 / 一键把数据送进调参助手。没有硬件也能用「演示」注入数据。</p>
+          <p class="muted">列端口 / 收发 / 实时曲线 / 一键出 PID 建议。
+            <b>电赛专区的「串口采数」是它的主入口</b>（和调参助手挨着，采完直接出指标）；
+            这里放一个快捷入口，别的硬件类竞赛/课设也能用。没有硬件可点「演示」注入数据。</p>
           <span class="dgo">打开 →</span>
         </button>
       </div>
@@ -454,7 +456,9 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
       <span class="grow"></span>
       <span class="chip" id="serState">未连接</span>
     </div>
-    <div class="work">
+    <!-- ★ 串口面板本体：#serPanel 会在「电赛专区 → 串口采数」和「工具箱 → 串口助手」
+         两个宿主之间被搬移（DOM 搬移不丢事件监听），代码只有一份 -->
+    <div class="work" id="serPanel">
       <div class="stack">
         <div class="card">
           <h3 style="margin-bottom:var(--s3)">串口连接</h3>
@@ -623,7 +627,18 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
       </div>
     </div>
 
-    <div id="panelTune" class="work" hidden role="tabpanel">
+    <!-- 串口采数：面板本体会被搬进这里（见 mountSerial） -->
+  <div id="panelSerial" class="work" hidden role="tabpanel">
+    <div class="card" style="grid-column:1/-1">
+      <p class="muted" style="margin:0 0 var(--s3)">
+        采数据 → 一键算指标 → 出 PID 建议，全程不用复制粘贴。
+        数据从串口按行读入（每行两个数字即可，如 <code>0.04,0.55</code>）。
+      </p>
+      <div id="serHostDomain"></div>
+    </div>
+  </div>
+
+  <div id="panelTune" class="work" hidden role="tabpanel">
       <div class="stack">
         <div class="card">
           <h3 style="margin-bottom:var(--s2)">上传实测数据</h3>
@@ -907,7 +922,8 @@ $("goAbout").addEventListener("click",()=>$("howBox").scrollIntoView({behavior:"
 
 const show=v=>{$("viewHome").hidden=v!=="home";$("viewDomain").hidden=v!=="domain";
   $("viewSerial").hidden=v!=="serial";
-  if(v==="serial"){ loadPorts(); startSerialStream(); } else { stopSerialStream(); }};
+  if(v==="serial") mountSerial($("viewSerial"));         // ★ 面板搬回独立视图
+  updateSerialStream();};
 $("backHome").addEventListener("click",()=>{show("home");$("crumb").textContent="选择竞赛";
   history.replaceState(null,"","#");window.scrollTo({top:0})});
 
@@ -923,6 +939,8 @@ async function openDomain(id){
   const caps=dom.capabilities||["analyze"];
   const tabs=[["analyze","赛题分析"]];
   if(caps.includes("tune")) tabs.push(["tune","调参助手"]);
+  // ★ 硬件类分区才显示串口采数（能力由后端按 tune_template 推导，见 /api/domains）
+  if(caps.includes("serial")||caps.includes("tune")) tabs.push(["serial","串口采数"]);
   $("tabs").innerHTML=tabs.map(([k,t])=>`<button role="tab" data-tab="${k}" aria-selected="${k==="analyze"}">${t}</button>`).join("");
   $("tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(b)switchTab(b.dataset.tab)});
   $("panelTune").hidden=!caps.includes("tune");
@@ -931,8 +949,12 @@ async function openDomain(id){
 }
 function switchTab(k){
   [...$("tabs").querySelectorAll("button")].forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tab===k)));
+  const hasSer=!!$("tabs").querySelector('button[data-tab="serial"]');
   $("panelAnalyze").hidden=k!=="analyze";
   $("panelTune").hidden=k!=="tune"||!$("tabs").querySelector('button[data-tab="tune"]');
+  $("panelSerial").hidden=k!=="serial"||!hasSer;
+  if(k==="serial") mountSerial($("serHostDomain"));      // ★ 面板搬进电赛专区
+  updateSerialStream();                                  // 该开就开、该停就停
 }
 
 /* ── 题目两级选择 + 题面预览 ── */
@@ -1150,6 +1172,17 @@ function drawCurve(){
   </svg>`;
   $("serCurveInfo").textContent = `${SER_PTS.length} 点 · 量程 ${v0.toFixed(3)} ~ ${v1.toFixed(3)}`;
 }
+/* ★ 一个本体、两个入口：把面板搬到指定宿主（DOM 搬移，事件监听不丢） */
+function mountSerial(host){
+  const el=$("serPanel");
+  if(!el||!host) return;
+  if(el.parentElement!==host) host.appendChild(el);
+  if(!$("serPort").options.length) loadPorts();
+}
+/* 面板当前是否可见（独立视图 或 电赛专区tab） */
+function serialVisible(){ return !$("viewSerial").hidden || !$("panelSerial").hidden; }
+function updateSerialStream(){ serialVisible() ? startSerialStream() : stopSerialStream(); }
+
 function startSerialStream(){
   if(SER_STREAM) return;
   const ctrl = new AbortController();
@@ -1420,8 +1453,9 @@ $("files").addEventListener("click",e=>{
   const t=setInterval(()=>{
     if(!state.domains.length) return;
     clearInterval(t);
-    const target=id&&state.domains.some(x=>x.id===id&&x.implemented)?id:"diansai";
-    openDomain(target);
+    const [domId,tabId]=String(id).split(":");      // ★ 支持 #分区:tab，如 #diansai:serial
+    const target=domId&&state.domains.some(x=>x.id===domId&&x.implemented)?domId:"diansai";
+    openDomain(target).then(()=>{ if(tabId) switchTab(tabId); });
   },120);
 })();
 </script>

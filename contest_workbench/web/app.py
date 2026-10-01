@@ -94,6 +94,9 @@ def health() -> JSONResponse:
     cfg = Config()
     return JSONResponse({
         "ok": True,
+        # ★ 用来分清"当前在跑的是源码还是打包后的 exe" —— 改前端静态文件时全靠它，
+        #   因为 exe 里的静态文件是**打包时**塞进去的，不会跟着源码变（为此截错过图）
+        "frozen": bool(getattr(sys, "frozen", False)),
         "platform": PLATFORM,
         "model": cfg.model,
         "key_source": cfg.key_source(),
@@ -115,6 +118,9 @@ def api_domains() -> JSONResponse:
         caps = ["analyze"]
         if d.tune_template:
             caps.append("tune")
+            # ★ 有调参能力的都是"硬件类"分区 —— 串口采数是「采数据 → 出指标 → 改 PID」
+            #   这条链的入口，所以能力跟着 tune 一起给（前端据此显示「串口采数」页签）
+            caps.append("serial")
         out.append({"id": d.id, "name": d.name, "implemented": d.implemented,
                     "note": d.note, "capabilities": caps})
     return JSONResponse({"table_md": list_domains(), "domains": out})

@@ -50,6 +50,18 @@ def step_series(n: int = 60, dt: float = 0.04, zeta: float = 0.5, wn: float = 2.
 
 def main() -> int:
     client = TestClient(webapp.app)
+
+    print("\n== == \u7aef\u53e3\u80fd\u529b\uff1a\u4e32\u53e3\u53ea\u7ed9\u786c\u4ef6\u7c7b\u5206\u533a ==")
+    dom = client.get("/api/domains").json()["domains"]
+    by_id = {d["id"]: d for d in dom}
+    check("\u7535\u8d5b\u5206\u533a\u6709 serial \u80fd\u529b\uff08\u786c\u4ef6\u7c7b\u5206\u533a\u624d\u6709\u4e32\u53e3\u91c7\u6570\uff09",
+          "serial" in by_id["diansai"]["capabilities"], str(by_id["diansai"]["capabilities"]))
+    check("\u6570\u5b66\u5efa\u6a21\u5206\u533a\u6ca1\u6709 serial \u80fd\u529b\uff08\u7eaf\u8f6f\u4ef6\u7ade\u8d5b\u4e0d\u8be5\u51fa\u73b0\u4e32\u53e3\u9875\u7b7e\uff09",
+          "serial" not in by_id["mathmodel"]["capabilities"],
+          str(by_id["mathmodel"]["capabilities"]))
+    h = client.get("/api/health").json()
+    check("health \u66b4\u9732 frozen\uff08\u5206\u5f97\u6e05\u5728\u8dd1\u6e90\u7801\u8fd8\u662f\u6253\u5305 exe\uff09",
+          isinstance(h.get("frozen"), bool), repr(h.get("frozen")))
     # ★ 每个用例开始前把单例重置（同一个进程里跑多组，状态会串）
     webapp._SERIAL = SerialAssistant()
 
