@@ -72,6 +72,10 @@ jobs:
       - name: 串口助手接口（离线）
         run: python tests/test_serial_api.py
 
+      # 声明式帧解析（纯计算，不需要硬件）
+      - name: 帧解析（离线）
+        run: python tests/test_frame.py
+
       - name: 命令行空跑（不调用模型）
         run: |
           python cli.py --version

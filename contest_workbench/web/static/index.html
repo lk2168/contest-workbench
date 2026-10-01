@@ -550,6 +550,36 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
           </p>
         </div>
         <div class="card">
+          <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+            <h3>帧解析（二进制协议）</h3>
+            <span class="muted" style="font-size:12px" id="serFrameStats">未启用（按行解析）</span>
+          </div>
+          <div class="row-actions">
+            <select id="serFrameSel" style="min-width:230px"></select>
+            <button class="primary" id="btnSerFrameUse">启用</button>
+            <button class="ghost" id="btnSerFrameOff">停用</button>
+          </div>
+          <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
+            板子发的是二进制帧（帧头 / 长度 / CRC）时用它：解析出来的字段会<b>直接变成数据点</b>，
+            照样能画曲线、算指标、出 PID 建议。
+          </p>
+          <details style="margin-top:var(--s3)">
+            <summary class="muted" style="cursor:pointer;font-size:12.5px">自定义帧格式（JSON）/ 试解析</summary>
+            <textarea id="serFrameJson" spellcheck="false"
+              style="width:100%;height:150px;margin-top:var(--s2);font-family:ui-monospace,Consolas,monospace;font-size:12px"
+              placeholder='{"name":"我的板子","start":"AA 55", ...}'></textarea>
+            <div class="row-actions" style="margin-top:var(--s2)">
+              <button class="ghost" id="btnSerFrameLoad">载入选中格式</button>
+              <button class="ghost" id="btnSerFrameSave">保存并启用</button>
+              <input id="serFrameSample" placeholder="示例数据（十六进制）：AA 55 0D 0A D7 23 3D ..."
+                     style="flex:1;min-width:170px">
+              <button class="ghost" id="btnSerFrameTest">试解析</button>
+            </div>
+            <div id="serFramePreview" style="margin-top:var(--s2)"></div>
+          </details>
+        </div>
+
+        <div class="card">
           <h3 style="margin-bottom:var(--s3)">数据 → 指标（一键送调参助手）</h3>
           <div class="row-actions">
             <input id="serTarget" placeholder="目标值（可选，如 1.0）">
@@ -1219,6 +1249,7 @@ function mountSerial(host){
   if(el.parentElement!==host) host.appendChild(el);
   if(!$("serPort").options.length) loadPorts();
   loadLines();
+  loadFrames();
 }
 /* 面板当前是否可见（独立视图 或 电赛专区tab） */
 function serialVisible(){ return !$("viewSerial").hidden || !$("panelSerial").hidden; }
@@ -1254,6 +1285,10 @@ function startSerialStream(){
           SER_TOTAL = ev.total || SER_TOTAL;
           $("serStats").textContent = `${SER_TOTAL} 点 · 坏行 ${ev.bad_lines||0} · 拦截 ${ev.outliers||0}`
             + (ev.recording ? " · 记录中" : "");
+          if(ev.frame && ev.frame.format){
+            $("serFrameStats").textContent = `帧 ${ev.frame.frames} · 校验错 ${ev.frame.bad_checksum}`
+              + ` · 坏帧 ${ev.frame.bad_frames} · 待拼 ${ev.frame.pending} 字节`;
+          }
           setSerState(ev.is_open);
           if(!SER_RAF) SER_RAF = requestAnimationFrame(drawCurve);
         }
@@ -1335,6 +1370,63 @@ async function probePresets(){
       <p class="muted" style="font-size:12.5px">把上面「能跑程序」的那个选进下拉框，以后就固定用它。</p>`;
   }catch(e){ box.innerHTML = `<div class="note err"><span>${esc(e.message)}</span></div>` }
 }
+async function loadFrames(){
+  try{
+    const d = await (await api("/api/serial/frames")).json();
+    $("serFrameSel").innerHTML = (d.formats||[]).map(f=>
+      `<option value="${esc(f.name)}">${esc(f.name)}${f.builtin ? "" : "（我保存的）"}</option>`).join("");
+    $("serFrameStats").textContent = d.active ? `已启用：${d.active}` : "未启用（按行解析）";
+    if(d.active){
+      const cur = (d.formats||[]).find(f=>f.name===d.active);
+      if(cur && !$("serFrameJson").value.trim())
+        $("serFrameJson").value = JSON.stringify(cur.config, null, 2);
+    }
+  }catch(e){ /* 忽略 */ }
+}
+async function useFrame(on){
+  const body = on ? {name:$("serFrameSel").value} : {off:true};
+  try{
+    const d = await (await api("/api/serial/frames/use",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)})).json();
+    $("serMsg").textContent = d.message;
+    $("serFrameStats").textContent = d.active ? `已启用：${d.active}` : "未启用（按行解析）";
+  }catch(e){ $("serMsg").textContent = "启用失败：" + e.message }
+}
+function loadFrameJson(){
+  const name = $("serFrameSel").value;
+  fetch("/api/serial/frames").then(r=>r.json()).then(d=>{
+    const cur = (d.formats||[]).find(f=>f.name===name);
+    if(cur) $("serFrameJson").value = JSON.stringify(cur.config, null, 2);
+  });
+}
+async function saveFrame(){
+  try{
+    const d = await (await api("/api/serial/frames/save",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({config:$("serFrameJson").value})})).json();
+    $("serMsg").textContent = d.message;
+    if(d.ok){ await loadFrames(); }
+  }catch(e){ $("serMsg").textContent = "保存失败：" + e.message }
+}
+async function testFrame(){
+  const box = $("serFramePreview");
+  box.innerHTML = '<span class="muted">解析中…</span>';
+  try{
+    const d = await (await api("/api/serial/frames/test",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({config:$("serFrameJson").value, sample_hex:$("serFrameSample").value})})).json();
+    const rows = (d.frames||[]).map(f=> f.ok
+      ? `<b style="color:#067647">✓</b> ${esc(JSON.stringify(f.values))}` +
+        (f.point ? ` → 数据点 (${f.point[0]}, ${f.point[1]})` : "")
+      : `<b style="color:#B54708">✗</b> ${esc(f.error||"解析失败")}`);
+    box.innerHTML = `<div class="note"><span>${esc(d.note)}</span></div>` +
+      (rows.length ? `<div class="readout" style="max-height:150px;margin-top:var(--s2)">${rows.join("<br>")}</div>` : "");
+  }catch(e){ box.innerHTML = `<div class="note err"><span>${esc(e.message)}</span></div>` }
+}
+if($("btnSerFrameUse")) $("btnSerFrameUse").addEventListener("click",()=>useFrame(true));
+if($("btnSerFrameOff")) $("btnSerFrameOff").addEventListener("click",()=>useFrame(false));
+if($("btnSerFrameLoad")) $("btnSerFrameLoad").addEventListener("click",loadFrameJson);
+if($("btnSerFrameSave")) $("btnSerFrameSave").addEventListener("click",saveFrame);
+if($("btnSerFrameTest")) $("btnSerFrameTest").addEventListener("click",testFrame);
+
 if($("btnSerResetRun")) $("btnSerResetRun").addEventListener("click",()=>resetBoard("run"));
 if($("btnSerResetBoot")) $("btnSerResetBoot").addEventListener("click",()=>resetBoard("boot"));
 if($("btnSerApplyLines")) $("btnSerApplyLines").addEventListener("click",applyLines);

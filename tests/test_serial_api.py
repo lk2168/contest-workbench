@@ -156,7 +156,56 @@ def main() -> int:
     check("未打开串口时自动探测不炸（返回 error 项）",
           r["ok"] is True and len(r["results"]) == 1, str(r)[:80])
 
-    print("\n== ⑨ 关闭 ==")
+    print("\n== ⑨ 帧解析接口 ==")
+    webapp._SERIAL = SerialAssistant()      # 重置单例：前面几段已经攒了数据点，不然帧数对不上
+    d = client.get("/api/serial/frames").json()
+    check("帧格式清单有 3 个内置示例", len([f for f in d["formats"] if f["builtin"]]) == 3,
+          str(len(d["formats"])))
+    check("每个格式都带完整 config", all(f.get("config", {}).get("fields") for f in d["formats"]))
+
+    r = client.post("/api/serial/frames/use", json={"name": "不存在的格式"}).json()
+    check("启用不存在的格式 → ok=False 且说人话", r["ok"] is False and "没有找到" in r["message"],
+          r["message"][:60])
+
+    name = d["formats"][0]["name"]
+    r = client.post("/api/serial/frames/use", json={"name": name}).json()
+    check("启用内置格式 → ok 且提示含校验与字段数",
+          r["ok"] and "已启用帧解析" in r["message"] and "crc16" in r["message"], r["message"][:80])
+    check("状态里 active 是刚启用的格式", client.get("/api/serial/frames").json()["active"] == name)
+
+    # ★ 注入一段真实二进制帧（AA55 + 长度 + 两个 f32 + CRC16-MODBUS），验证整条链
+    import struct as _st
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    from contest_workbench.frame_parser import crc16_modbus as _crc
+
+    def _frame(t, v):
+        raw = b"\xAA\x55" + bytes([13]) + _st.pack("<ff", t, v)
+        return raw + _st.pack("<H", _crc(raw))
+
+    body = (_frame(0.04, 0.55) + _frame(0.08, 0.90)).hex(" ").upper()
+    r = client.post("/api/serial/feed", json={"text": body, "hex_mode": True}).json()
+    check("十六进制注入成功", r["ok"] and "已注入" in r["message"], r["message"][:60])
+    st = client.get("/api/serial/status").json()
+    check("★ 二进制帧变成数据点（2 帧 → 2 点）", st["total"] == 2, str(st["total"]))
+    check("★ 数据点数值正确", abs(st["points"][0][1] - 0.55) < 1e-6, str(st["points"][:2]))
+    check("状态里有帧统计（帧数/校验错/待拼）",
+          st.get("frame", {}).get("frames") == 2 and "bad_checksum" in st.get("frame", {}),
+          str(st.get("frame")))
+
+    r = client.post("/api/serial/frames/test",
+                    json={"config": d["formats"][0]["config"], "sample_hex": body}).json()
+    check("试解析接口能给出帧预览", r["ok"] and len(r["frames"]) == 2 and r["frames"][0]["ok"],
+          str(r)[:90])
+    check("试解析同时给出数据点映射", r["frames"][0]["point"] is not None, str(r["frames"][0])[:80])
+    bad = client.post("/api/serial/frames/test",
+                      json={"config": d["formats"][0]["config"], "sample_hex": "ZZ"})
+    check("示例数据不是十六进制 → 400 且说人话", bad.status_code == 400 and "十六进制" in bad.text,
+          bad.text[:70])
+    r = client.post("/api/serial/frames/use", json={"off": True}).json()
+    check("停用帧解析 → ok 且回到按行解析", r["ok"] and r["active"] == "", str(r)[:60])
+
+    print("\n== ⑩ 关闭 ==")
     r = client.post("/api/serial/close").json()
     check("关闭串口 → ok", r["ok"] is True, str(r)[:60])
     check("关闭后 status.is_open=False", client.get("/api/serial/status").json()["is_open"] is False)

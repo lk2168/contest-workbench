@@ -260,6 +260,83 @@ def api_serial_probe_presets() -> JSONResponse:
                                     if runs else "没有一种预设能让它运行 —— 检查供电/接线/是否被别的软件占用")})
 
 
+@app.get("/api/serial/frames")
+def api_serial_frames() -> JSONResponse:
+    """帧格式清单（内置示例 + 用户保存的）+ 当前启用的那个。"""
+    from ..frame_parser import list_formats
+    a = _serial()
+    return JSONResponse({"formats": list_formats(),
+                         "active": a.frame_stats().get("format", ""),
+                         "stats": a.frame_stats()})
+
+
+@app.post("/api/serial/frames/use")
+def api_serial_frames_use(payload: dict) -> JSONResponse:
+    """启用/停用帧解析：传 {"name": "格式名"} 启用；传 {"name": null} 或 {"off": true} 停用。"""
+    from ..frame_parser import load_format
+    p = payload or {}
+    if p.get("off") or p.get("name") in (None, ""):
+        msg = _serial().set_frame_format(None)
+        return JSONResponse({"ok": True, "message": msg, "active": ""})
+    cfg, err = load_format(str(p.get("name")))
+    if err:
+        return JSONResponse({"ok": False, "message": err})
+    msg = _serial().set_frame_format(cfg)
+    ok = not msg.startswith(ERROR_PREFIX)
+    return JSONResponse({"ok": ok, "message": msg,
+                         "active": _serial().frame_stats().get("format", "") if ok else ""})
+
+
+@app.post("/api/serial/frames/save")
+def api_serial_frames_save(payload: dict) -> JSONResponse:
+    """保存自定义帧格式（JSON）。"""
+    from ..frame_parser import save_format
+    cfg = (payload or {}).get("config")
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"JSON 写错了：{e}")
+    path, err = save_format(cfg or {})
+    return JSONResponse({"ok": not err, "message": err or f"已保存：{path}", "path": str(path or "")})
+
+
+@app.post("/api/serial/frames/test")
+def api_serial_frames_test(payload: dict) -> JSONResponse:
+    """试解析：拿一段示例字节（十六进制）跑一遍这个配置，返回解析结果预览。"""
+    from ..frame_parser import FrameDecoder, frame_to_point, parse_format
+    p = payload or {}
+    cfg = p.get("config")
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"JSON 写错了：{e}")
+    fmt, err = parse_format(cfg or {})
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    sample = str(p.get("sample_hex") or "").replace(",", " ").replace("0x", " ").replace("0X", " ")
+    sample = "".join(sample.split())
+    try:
+        data = bytes.fromhex(sample)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="示例数据不是合法的十六进制（写成 AA 55 01 02 这样）")
+    if not data:
+        raise HTTPException(status_code=400, detail="请填一段示例数据（十六进制），例如 AA 55 0D ...")
+    dec = FrameDecoder(fmt)
+    frames = dec.feed(data)
+    preview = []
+    for fr in frames:
+        pt = frame_to_point(fr, fr.get("t") or 0)
+        preview.append({"ok": fr.get("ok"), "values": fr.get("values"),
+                        "point": list(pt) if pt else None,
+                        "error": fr.get("error", ""), "raw": fr["raw"].hex(" ").upper()})
+    return JSONResponse({"ok": True, "format": fmt.name, "frames": preview,
+                         "stats": dec.stats(),
+                         "note": ("解析出 %d 帧" % len(frames)) if frames
+                                 else "这段数据里没切出完整帧（检查帧头/长度字段/校验设置）"})
+
+
 @app.post("/api/serial/close")
 def api_serial_close() -> JSONResponse:
     return JSONResponse({"ok": True, "message": _serial().close()})
@@ -275,8 +352,19 @@ def api_serial_send(payload: dict) -> JSONResponse:
 
 @app.post("/api/serial/feed")
 def api_serial_feed(payload: dict) -> JSONResponse:
-    """假串口注入（没有硬件时演示/自测用）：走与真实串口完全相同的解析管线。"""
-    text = (payload or {}).get("text", "")
+    """假串口注入（没有硬件时演示/自测用）：走与真实串口完全相同的解析管线。
+
+    `hex_mode=true` 时按十六进制解析 text（用来注入二进制帧，验证帧解析）。
+    """
+    p = payload or {}
+    text = p.get("text", "")
+    if p.get("hex_mode"):
+        s = "".join(str(text).replace(",", " ").replace("0x", " ").replace("0X", " ").split())
+        try:
+            data = bytes.fromhex(s)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="十六进制写错了（示例：AA 55 0D 00 00 40 40）")
+        return JSONResponse({"ok": True, "message": _serial().feed_bytes(data)})
     _serial().feed_text(text)
     return JSONResponse({"ok": True, "message": f"已注入 {len(text)} 字符（走同一套解析管线）"})
 
@@ -342,6 +430,7 @@ def api_serial_stream(limit: int = 0) -> StreamingResponse:
                             "outliers": snap.get("outliers", 0), "dropped": dropped,
                             "is_open": snap.get("is_open", False),
                             "recording": snap.get("recording", False),
+                            "frame": snap.get("frame", {}),
                             "port": snap.get("port"), "baudrate": snap.get("baudrate")})
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             sent += 1

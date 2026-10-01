@@ -280,6 +280,8 @@ class SerialAssistant:
         self.outlier_factor = max(2.0, float(outlier_factor))
         self.outlier_min_samples = max(2, int(outlier_min_samples))
         self._outliers = 0                                      # 被守卫拦下的坏点数
+        # ★ 帧解析（二进制协议）：启用后收到的字节走 FrameDecoder，而不是按行解析
+        self._decoder = None
         self._dropped = 0                                      # 被滑窗挤掉的最旧点数
 
         self._rec_file = None
@@ -634,7 +636,14 @@ class SerialAssistant:
 
     # ── 解析管线（调用方持有 _lock）──────────────────────────────────────
     def _consume_locked(self, chunk: bytes) -> None:
-        """字节缓冲 → 按行切分（半包留到下次）→ 逐行处理 → 超长缓冲丢弃并提示。"""
+        """字节缓冲 → 按行切分（半包留到下次）→ 逐行处理 → 超长缓冲丢弃并提示。
+
+        ★ 启用了帧解析（二进制协议）时改走帧解码器：真实板子的二进制帧没有换行符，
+        按行解析只会一直攒缓冲（这正是"接不住真实板子"的原因）。
+        """
+        if self._decoder is not None:
+            self._consume_frames_locked(chunk)
+            return
         buf = self._buf
         buf.extend(chunk)
         while True:
@@ -653,6 +662,64 @@ class SerialAssistant:
                 f"[错误] 已累计超过 {self.max_buffer // 1024} KB 还没收到换行符，这段数据被丢弃了。"
                 f"请检查：① 波特率是否和单片机一致；② 发送方是否以 \\n 结尾；"
                 f"③ 是不是在发二进制而不是文本。")
+
+    def _consume_frames_locked(self, chunk: bytes) -> None:
+        """帧解析管线：解码 → 数据点 → 事件（与按行管线共用 points/滑窗/记录）。"""
+        frames = self._decoder.feed(chunk)
+        for fr in frames:
+            if not fr.get("ok"):
+                self._push_event_locked("error", f"[坏帧] {fr.get('error') or '解析失败'}",
+                                        dir="rx")
+                continue
+            point = None
+            try:
+                from .frame_parser import frame_to_point
+                point = frame_to_point(fr, self._total + 1)
+            except Exception:
+                point = None
+            if point is not None:
+                if len(self._points) == self._points.maxlen:
+                    self._dropped += 1
+                self._points.append(point)
+                self._total += 1
+                self._write_row_locked(point)
+            desc = "，".join(
+                f"{k}={v:.6g}" if isinstance(v, float) else f"{k}={v}"
+                for k, v in (fr.get("values") or {}).items())
+            self._push_event_locked("frame", f"[帧 {fr.get('t')}] {desc}",
+                                    values=(list(point) if point else None), dir="rx")
+
+    def set_frame_format(self, cfg) -> str:
+        """启用/停用帧解析。
+
+        `cfg=None` → 停用，回到「每行两个数字」的按行解析；
+        否则传帧格式配置（dict），会先校验再启用。返回人话结果或 `[错误]` 开头的错误。
+        """
+        from .frame_parser import FrameDecoder, parse_format
+        if cfg is None:
+            self._decoder = None
+            with self._lock:
+                self._buf.clear()
+            return "已停用帧解析，回到「每行两个数字」的按行解析"
+        fmt, err = parse_format(cfg)
+        if err:
+            return err
+        with self._lock:
+            self._decoder = FrameDecoder(fmt)
+            self._buf.clear()                       # 两种管线别共用缓冲
+        bits = [f"帧头 {fmt.start.hex(' ').upper()}" if fmt.start else "无帧头"]
+        if fmt.length_fixed:
+            bits.append(f"定长 {fmt.length_fixed} 字节")
+        elif fmt.length_size:
+            bits.append(f"长度字段 @{fmt.length_offset}")
+        if fmt.checksum != "none":
+            bits.append(f"校验 {fmt.checksum}")
+        bits.append(f"{len(fmt.fields)} 个字段")
+        return f"已启用帧解析：「{fmt.name}」（{'、'.join(bits)}）"
+
+    def frame_stats(self) -> dict:
+        """帧解析统计（没启用时返回空 dict）。"""
+        return self._decoder.stats() if self._decoder is not None else {}
 
     def _value_range_locked(self) -> tuple:
         """当前已接收点的幅值范围（用于提示与守卫）。"""
@@ -758,6 +825,7 @@ class SerialAssistant:
                 "total": self._total,
                 "bad_lines": self._bad_lines,
             "outliers": self._outliers,
+            "frame": self.frame_stats(),
                 "dropped": self._dropped,
                 "buffer_bytes": len(self._buf),
                 "pending_events": len(self._events),
