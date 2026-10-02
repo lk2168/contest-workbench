@@ -1,0 +1,2 @@
+[console_scripts]
+diansai-serial = contest_workbench.serial_cli:main

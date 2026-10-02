@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diansai-serial"
+version = "0.1.0"
+description = "电赛串口助手：看串口、算阶跃指标（超调/上升/调节时间）、自动扫参数并推荐、串口 ISP 烧录。命令行与网页两种用法。"
+readme = "README-serial.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "lk2168" }]
+keywords = ["serial", "uart", "stm32", "isp", "pid", "tuning", "电赛", "串口"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Education",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Education",
+  "Topic :: System :: Hardware :: Hardware Drivers",
+]
+
+# ★ 依赖分层：核心只依赖 pyserial（装了就能看串口、烧固件）；
+#   额外的能力各自一组，缺哪个会明确提示你装哪个，不会抛一堆看不懂的栈。
+dependencies = [
+  "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+metrics = ["numpy>=1.26"]                 # 算超调/上升/调节时间、参数扫描
+plot = ["matplotlib>=3.8"]                # 画阶跃曲线图
+web = [                                   # 网页版工作台（含上面的全部）
+  "numpy>=1.26",
+  "matplotlib>=3.8",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "python-multipart>=0.0.9",
+  "PyYAML>=6.0",
+  "requests>=2.31",
+  "pypdf>=5.0",
+  "python-docx>=1.1",
+]
+all = [
+  "numpy>=1.26",
+  "matplotlib>=3.8",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "python-multipart>=0.0.9",
+  "PyYAML>=6.0",
+  "requests>=2.31",
+  "pypdf>=5.0",
+  "python-docx>=1.1",
+]
+
+[project.scripts]
+diansai-serial = "contest_workbench.serial_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/lk2168/contest-workbench"
+Source = "https://github.com/lk2168/contest-workbench"
+
+[tool.setuptools]
+packages = ["contest_workbench", "contest_workbench.tools", "contest_workbench.web"]
+
+[tool.setuptools.package-data]
+"contest_workbench.web" = ["static/*"]

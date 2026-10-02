@@ -31,6 +31,8 @@ Agent 每一步在做什么都显示出来；关键指标由本地算法计算�
 | 读赛题 → 逐条拆解要求并**量化** | 替你焊电路、写最终固件（它给骨架与参数初值） |
 | 查**官方答疑**与**历年同类题**（跨年检索） | 编造指标或器件参数（提示词里明令禁止，缺数据就标"待确认"） |
 | **调参助手**：串口/CSV 数据 → 超调量/上升时间/调节时间/稳态误差 + 曲线图 + PID 调整建议 | 替你决定最终参数（它给"改哪个、改多少、怎么验证"，实测还得你来） |
+
+> **只想要串口工具？** 串口部分可以单独安装使用（命令行 + 独立说明）：见 [`README-serial.md`](README-serial.md)，装法 `pip install .`（核心只依赖 pyserial）。
 | 出：任务拆解表 / 评分点推断 / 方案对比 / 器件清单 / 算法与 PID 初值 / 4天3夜时间线 / 风险预案 / 调参报告 | 猜官方评分细则（官方不公开，它只做**基于历年规律的推断**，并标注"需以官方细则为准"） |
 | 报告自动落盘为 Markdown **+ Word** | 联网替你去比赛（赛期禁止与队外交流，方案里也不会出现这类建议） |
 
@@ -79,7 +81,7 @@ python scripts/make_sample_step.py                        # 先生成一份示�
 python cli.py tune samples/step-response-sample.csv --target 1.0            # 含模型诊断
 python cli.py tune samples/step-response-sample.csv --target 1.0 --no-llm   # 只本地算（0 成本）
 
-# 6) 测试：十三套共 579 项，全部离线、不需要 API Key（CI 也会自动跑）
+# 6) 测试：十四套共 627 项，全部离线、不需要 API Key（CI 也会自动跑）
 python tests/test_offline.py    # 27 项：工具链 + 分区 + 报告落盘
 python tests/test_tuning.py     # 28 项：调参算法（对二阶系统解析解校验）
 python tests/test_web.py        # 70 项：网页接口 + 上传调参 + 错误处理 + 路径安全

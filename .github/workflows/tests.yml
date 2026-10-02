@@ -92,3 +92,42 @@ jobs:
       - name: 命令行自检 --check（无 Key 时退出码 2 属预期，不判失败）
         continue-on-error: true
         run: python cli.py --check
+
+  # ★ 独立安装验证：核心只装 pyserial，装完必须能列串口、且不能拖进重依赖
+  independent-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 只装核心（应该只拉 pyserial）
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+      - name: 核心装完不该有 numpy/fastapi/matplotlib
+        run: |
+          python - <<'PY'
+          import sys
+          import contest_workbench.serial_assistant, contest_workbench.frame_parser
+          import contest_workbench.stm32_isp, contest_workbench.serial_cli
+          heavy = [m for m in ("numpy", "fastapi", "matplotlib", "uvicorn", "yaml")
+                   if m in sys.modules]
+          print("拖进来的重依赖:", heavy)
+          assert not heavy, f"核心安装不该依赖 {heavy}"
+          PY
+      - name: 命令行入口可用（中文帮助）
+        run: |
+          diansai-serial --help
+          diansai-serial --version
+          diansai-serial ports || true        # 无串口时退出码 1，属正常
+      - name: 缺 numpy 时给的是人话（不是栈）
+        run: |
+          printf '0.0,0.0\n0.1,0.5\n' > /tmp/x.csv
+          if diansai-serial analyze /tmp/x.csv 2>/tmp/err.txt; then exit 1; fi
+          cat /tmp/err.txt
+          grep -q "metrics" /tmp/err.txt
+      - name: 装 [metrics] 后能算指标
+        run: |
+          pip install ".[metrics]"
+          python -c "import contest_workbench.sweep; print('sweep 可导入')"
