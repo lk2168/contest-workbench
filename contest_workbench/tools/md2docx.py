@@ -19,7 +19,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Pt, RGBColor
+from docx.shared import Cm, Emu, Pt, RGBColor
 
 BODY_FONT = "\u5fae\u8f6f\u96c5\u9ed1"      # 微软雅黑
 MONO_FONT = "Consolas"
@@ -34,6 +34,92 @@ QUOTE_FILL = "F4F4F4"
 TOKEN_RE = re.compile(
     r"(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\*(?=[^\s*])[^*]*[^\s*]\*)"
 )
+
+
+# --------------------------------------------------------------------------- #
+# 表格布局（★ 这里是「表格被压成一个字一行」的修复处）
+# --------------------------------------------------------------------------- #
+def 视觉宽度(s: str) -> float:
+    """这串文字大约要多宽，单位是「半角字符」。中文和全角标点算 2。"""
+    s = re.sub(r"<br\s*/?>", "", s or "")
+    s = re.sub(r"[*`]+", "", s)
+    w = 0.0
+    for ch in s:
+        w += 2 if ("\u4e00" <= ch <= "\u9fff" or "\u3000" <= ch <= "\u303f"
+                   or "\uff00" <= ch <= "\uffef") else 1
+    return w
+
+
+def 表内字号(rows, cols: int, 可用宽度_cm: float, 默认: float = 9.0) -> float:
+    """内容太密就缩一号字（9 → 8 → 7.5），让每列还能放下几个字。
+
+    这是个**经验判据**：把所有列最宽内容加起来，跟可用宽度比。
+    超过 2.5 倍缩到 8pt，超过 3.5 倍缩到 7.5pt（再小就不好读了，不再缩）。
+    """
+    if cols <= 0:
+        return 默认
+    需要 = 0.0
+    for ci in range(cols):
+        w = max([视觉宽度(str(r[ci])) if ci < len(r) else 0 for r in rows] or [1])
+        需要 += max(w, 4.0)
+    for pt in (默认, 8.0, 7.5):
+        if 需要 * (pt * 0.03528 / 2) <= 可用宽度_cm * (2.5 if pt == 默认 else 3.5):
+            return pt
+    return 7.5
+
+
+def 算列宽(rows, cols: int, 可用宽度_cm: float, font_pt: float,
+          最小_cm: float = 1.5) -> list:
+    """按每列内容宽度**成比例**分配列宽，并用「水位法」保证每列不低于 `最小_cm`。
+
+    ★ 为什么要自己算：Word/WPS 的自动布局会把短列压到极限 ——
+    于是中文变成「一个字一行」（用户实际遇到的就是这个）。
+    只让 autofit=False 也不够，必须把宽度**写死**到每个单元格（见 设固定列宽）。
+    """
+    if cols <= 0:
+        return []
+    if 可用宽度_cm <= 最小_cm * cols:            # 页面太窄：只能平分
+        return [可用宽度_cm / cols] * cols
+    需要 = []
+    for ci in range(cols):
+        w = max([视觉宽度(str(r[ci])) if ci < len(r) else 0 for r in rows] or [1])
+        需要.append(max(w, 4.0))                 # 空列也按 2 个汉字算，别给 0
+    剩余列 = list(range(cols))
+    剩余可用 = 可用宽度_cm
+    宽 = [0.0] * cols
+    for _ in range(cols):                        # 水位法：不够最小宽度的先钉死，再重分剩下的
+        剩余需要 = sum(需要[i] for i in 剩余列) or 1.0
+        变了 = False
+        for i in list(剩余列):
+            if 剩余可用 * 需要[i] / 剩余需要 < 最小_cm:
+                宽[i] = 最小_cm
+                剩余可用 -= 最小_cm
+                剩余列.remove(i)
+                变了 = True
+        if not 变了:
+            break
+    if 剩余列:
+        剩余需要 = sum(需要[i] for i in 剩余列) or 1.0
+        for i in 剩余列:
+            宽[i] = 剩余可用 * 需要[i] / 剩余需要
+    总 = sum(宽) or 1.0
+    return [w * 可用宽度_cm / 总 for w in 宽]     # 统一缩放，正好占满可用宽度
+
+
+def 设固定列宽(table, 宽列表: list) -> None:
+    """把列宽写死。python-docx 的坑：只设 autofit=False 不生效，还得
+    ① 加 w:tblLayout type="fixed" ② 给**每个单元格**都设宽度。"""
+    tblPr = table._tbl.tblPr
+    for el in tblPr.findall(qn("w:tblLayout")):
+        tblPr.remove(el)
+    layout = OxmlElement("w:tblLayout")
+    layout.set(qn("w:type"), "fixed")
+    tblPr.append(layout)
+    table.autofit = False
+    for row in table.rows:
+        for ci, cell in enumerate(row.cells):
+            if ci < len(宽列表):
+                cell.width = Cm(宽列表[ci])
 
 
 # --------------------------------------------------------------------------- #
@@ -321,10 +407,13 @@ def convert(md_path: str, docx_path: str) -> None:
             if not rows:
                 continue
             cols = max(len(r) for r in rows)
+            # ★ 注意：Length 相减会退化成普通 int，得用 Emu(...) 包回来才有 .cm
+            可用宽度 = Emu(section.page_width - section.left_margin
+                           - section.right_margin).cm        # A4 纵向通常 ≈ 17.4cm
+            字号 = 表内字号(rows, cols, 可用宽度)
             table = doc.add_table(rows=0, cols=cols)
             table.style = "Table Grid"
             table.alignment = WD_TABLE_ALIGNMENT.CENTER
-            table.autofit = True
             for ri, cells in enumerate(rows):
                 row = table.add_row()
                 for ci in range(cols):
@@ -340,11 +429,13 @@ def convert(md_path: str, docx_path: str) -> None:
                         first = False
                         p.paragraph_format.space_after = Pt(1)
                         p.paragraph_format.line_spacing = 1.1
-                        add_inline(p, frag, size=9, bold=(ri == 0))
+                        add_inline(p, frag, size=字号, bold=(ri == 0))
                     if ri == 0:
                         shade_cell(cell, HDR_FILL)
                 if ri == 0:
                     repeat_header(row)
+            # ★ 写完所有行再设列宽（必须按整表内容算，而且要覆盖每个单元格）
+            设固定列宽(table, 算列宽(rows, cols, 可用宽度, 字号))
             doc.add_paragraph().paragraph_format.space_after = Pt(2)
             continue
 

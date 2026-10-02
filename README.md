@@ -81,7 +81,7 @@ python scripts/make_sample_step.py                        # 先生成一份示�
 python cli.py tune samples/step-response-sample.csv --target 1.0            # 含模型诊断
 python cli.py tune samples/step-response-sample.csv --target 1.0 --no-llm   # 只本地算（0 成本）
 
-# 6) 测试：十四套共 627 项，全部离线、不需要 API Key（CI 也会自动跑）
+# 6) 测试：十五套共 654 项，全部离线、不需要 API Key（CI 也会自动跑）
 python tests/test_offline.py    # 27 项：工具链 + 分区 + 报告落盘
 python tests/test_tuning.py     # 28 项：调参算法（对二阶系统解析解校验）
 python tests/test_web.py        # 70 项：网页接口 + 上传调参 + 错误处理 + 路径安全
@@ -95,7 +95,8 @@ python tests/test_serial.py            # 135 项：串口助手 + 合理性守�
 python scripts/dev_server.py
 
 python tests/test_stm32_isp.py
-    python tests/test_sweep.py       #  36 项：STM32 串口 ISP（假 BootLoader，无需硬件）
+    python tests/test_sweep.py
+    python tests/test_report_table.py       #  36 项：STM32 串口 ISP（假 BootLoader，无需硬件）
 python tests/test_frame.py            # 帧解析（纯计算，无需硬件）
 #   54 项
 python tests/test_serial_api.py        #  60 项：串口助手的网页接口（feed 注入，无需硬件）

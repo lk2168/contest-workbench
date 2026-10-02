@@ -216,6 +216,13 @@ label{font-size:13px;font-weight:500;color:var(--ink2)}
 table{border-collapse:separate;border-spacing:0;width:100%;margin:var(--s3) 0;font-size:13px;
   background:var(--surface);border-radius:8px;overflow:hidden;box-shadow:var(--sh-xs)}
 th,td{padding:9px var(--s3);text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+/* ★ 表格列宽：中文不能被压成「一个字一行」
+   做法是给每列一个最小宽度 + 外面套可横向滚动的壳（宽度不够就整体滚动，
+   而不是把字挤成竖排）。字号越小越容易压，所以这里用 em 跟着字号走。 */
+.table-wrap{overflow-x:auto;margin:var(--s3) 0;-webkit-overflow-scrolling:touch}
+.table-wrap table{margin:0}
+.article td,.article th{min-width:5.5em;word-break:normal;overflow-wrap:break-word;line-height:1.5}
+.article td:first-child,.article th:first-child{min-width:4em}
 th{background:var(--g50);font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink3)}
 tr:last-child td{border-bottom:0}
 tbody tr:hover td{background:var(--g25)}
@@ -1040,10 +1047,12 @@ function md(src){
     if(ln.trim().startsWith("```")){if(!inC){inC=true;buf=[]}else{inC=false;o.push("<pre>"+esc(buf.join("\n"))+"</pre>")}i++;continue}
     if(inC){buf.push(ln);i++;continue}
     if(/^\s*\|/.test(ln)&&i+1<L.length&&/^\s*\|[\s:|-]+\|\s*$/.test(L[i+1])){
-      close();o.push("<table>");const c=r=>r.trim().replace(/^\||\|$/g,"").split("|").map(x=>x.trim());
+      // ★ 表格外面套一层可横向滚动的壳：列宽不够时宁可让表整体滚动，
+      //   也不能把中文压成「一个字一行」（Word 那边也修了同样的问题）
+      close();o.push('<div class="table-wrap"><table>');const c=r=>r.trim().replace(/^\||\|$/g,"").split("|").map(x=>x.trim());
       o.push("<tr>"+c(ln).map(x=>"<th>"+inl(x)+"</th>").join("")+"</tr>");i+=2;
       while(i<L.length&&/^\s*\|/.test(L[i])){o.push("<tr>"+c(L[i]).map(x=>"<td>"+inl(x)+"</td>").join("")+"</tr>");i++}
-      o.push("</table>");continue;
+      o.push("</table></div>");continue;
     }
     const h=ln.match(/^(#{1,4})\s+(.*)$/);
     if(h){close();o.push(`<h${h[1].length+1}>`+inl(h[2])+`</h${h[1].length+1}>`);i++;continue}

@@ -80,6 +80,7 @@ jobs:
       - name: STM32 ISP（离线）
         run: python tests/test_stm32_isp.py
           python tests/test_sweep.py
+          python tests/test_report_table.py
 
       - name: 命令行空跑（不调用模型）
         run: |
