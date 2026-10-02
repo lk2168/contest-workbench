@@ -21,3 +21,10 @@ dist/
 
 # 发布时临时用的说明文件（正式副本放 docs/releases/）
 .release-notes-*.md
+
+# pip 本地安装产生的构建元数据（pip install . 会生成，别提交）
+*.egg-info/
+.eggs/
+
+# 我干活时的临时脚本（.tmp-*.py），不属于项目文件
+.tmp-*.py
