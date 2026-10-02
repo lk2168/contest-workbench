@@ -271,6 +271,10 @@ def main() -> int:
                                        "text/plain")})
     check("上传 .hex → ok 且返回保存路径",
           good.status_code == 200 and good.json()["ok"], good.text[:80])
+    try:                                     # ★ 测试自己清理，别把垃圾留在用户的上传目录里
+        Path(good.json()["path"]).unlink(missing_ok=True)
+    except Exception:
+        pass
 
     print("\n== ⑫ 关闭 ==")
     r = client.post("/api/serial/close").json()
