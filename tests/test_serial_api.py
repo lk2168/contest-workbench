@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import io
 import json
 import math
 import os
@@ -243,7 +244,35 @@ def main() -> int:
     bad = client.post("/api/serial/checksum", json={"data_hex": ""})
     check("空数据 → 400", bad.status_code == 400, bad.text[:50])
 
-    print("\n== ⑪ 关闭 ==")
+    print("\n== ⑪ 固件烧录接口（只测校验路径，不真烧）==")
+    d = client.get("/api/flash/state").json()
+    check("烧录状态接口字段齐全",
+          {"running", "stage", "written", "total", "ok", "report"} <= set(d), str(list(d))[:90])
+    c = client.get("/api/flash/candidates").json()
+    check("候选固件接口返回 items 与目录", "items" in c and "dir" in c, str(c)[:70])
+    check("候选里每项都有 path/mtime/size",
+          all({"path", "mtime", "size"} <= set(x) for x in c["items"]), str(c["items"][:1]))
+
+    webapp._SERIAL = SerialAssistant()
+    r = client.post("/api/flash/start", json={"path": ""}).json()
+    check("没选固件 → 拒绝并说人话", r["ok"] is False and "选一个" in r["message"], r["message"][:50])
+    r = client.post("/api/flash/start", json={"path": "D:/根本没有这个.hex"}).json()
+    check("固件不存在 → 拒绝", r["ok"] is False and "找不到" in r["message"], r["message"][:50])
+    r = client.post("/api/flash/start", json={"path": str(ROOT / "README.md")}).json()
+    check("★ 串口没打开就烧录 → 拒绝（先让人打开串口）",
+          r["ok"] is False and "打开" in r["message"], r["message"][:60])
+
+    bad = client.post("/api/flash/upload",
+                      files={"file": ("x.txt", io.BytesIO(b"hello"), "text/plain")})
+    check("上传非 .hex → 400 且说清只要 .hex",
+          bad.status_code == 400 and ".hex" in bad.text, bad.text[:70])
+    good = client.post("/api/flash/upload",
+                       files={"file": ("测试固件.hex", io.BytesIO(b":00000001FF\n"),
+                                       "text/plain")})
+    check("上传 .hex → ok 且返回保存路径",
+          good.status_code == 200 and good.json()["ok"], good.text[:80])
+
+    print("\n== ⑫ 关闭 ==")
     r = client.post("/api/serial/close").json()
     check("关闭串口 → ok", r["ok"] is True, str(r)[:60])
     check("关闭后 status.is_open=False", client.get("/api/serial/status").json()["is_open"] is False)

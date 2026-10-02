@@ -152,6 +152,10 @@ def main() -> int:
           all(k in rendered for k in ("serPreset", "btnSerProbe", "btnSerResetRun",
                                      "btnSerResetBoot", "btnSerApplyLines")))
 
+    check("串口页有固件烧录卡片（选固件/校验/备份/开始烧录）",
+          all(k in rendered_domain for k in ("flashHex", "flashVerify", "flashBackup",
+                                             "flashRun", "btnFlashStart", "btnFlashUpload")))
+
     check("没有 JS 报错字样", "Cannot set properties" not in rendered
           and "undefined is not" not in rendered and "null (setting" not in rendered)
 

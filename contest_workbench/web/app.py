@@ -199,6 +199,135 @@ def _serial():
     return _SERIAL
 
 
+# ── 固件烧录（STM32 串口 ISP）────────────────────────────────────────────
+# 后台线程跑烧录（一次 20 秒左右），前端轮询 /api/flash/state 看进度
+_FLASH = {"running": False, "stage": "", "message": "", "written": 0, "total": 0,
+          "ok": None, "report": "", "hex": "", "backup": "", "started_at": 0.0}
+
+
+def _flash_candidates() -> list:
+    """扫最近编译出来的 .hex（只在几个常见目录里扫，避免全盘搜索）。"""
+    import time as _t
+    roots = [REPO_ROOT / "out" / "uploads", Path(r"D:\work"), Path.home() / "Desktop"]
+    pats = ["*.hex", "*/*.hex", "*/*/*.hex", "*/*/*/*.hex"]
+    found: dict = {}
+    for root in roots:
+        if not root.exists():
+            continue
+        for pat in pats:
+            try:
+                for p in root.glob(pat):
+                    if p.is_file() and p.suffix.lower() == ".hex":
+                        try:
+                            found[str(p)] = p.stat().st_mtime
+                        except Exception:
+                            pass
+            except Exception:
+                continue
+    out = sorted(found.items(), key=lambda kv: -kv[1])[:30]
+    return [{"path": p, "mtime": _t.strftime("%Y-%m-%d %H:%M", _t.localtime(m)),
+             "size": Path(p).stat().st_size if Path(p).exists() else 0} for p, m in out]
+
+
+@app.get("/api/flash/candidates")
+def api_flash_candidates() -> JSONResponse:
+    """候选固件（最近编译出来的 .hex，按时间倒序）。"""
+    return JSONResponse({"items": _flash_candidates(),
+                         "dir": str(REPO_ROOT / "out" / "uploads")})
+
+
+@app.get("/api/flash/state")
+def api_flash_state() -> JSONResponse:
+    """烧录状态与进度（前端轮询这个）。"""
+    return JSONResponse(dict(_FLASH))
+
+
+@app.post("/api/flash/upload")
+async def api_flash_upload(file: UploadFile = File(...)) -> JSONResponse:
+    """上传一个 .hex 固件（不想用本地路径时用）。"""
+    name = Path(file.filename or "firmware.hex").name
+    if not name.lower().endswith(".hex"):
+        raise HTTPException(status_code=400, detail="只接受 .hex 文件（Keil 编译产物在 Output 目录下）")
+    dst_dir = REPO_ROOT / "out" / "uploads"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / name
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="文件是空的")
+    dst.write_bytes(data)
+    return JSONResponse({"ok": True, "path": str(dst), "size": len(data),
+                         "message": f"已保存 {name}（{len(data) // 1024} KB）"})
+
+
+@app.post("/api/flash/start")
+def api_flash_start(payload: dict) -> JSONResponse:
+    """开始烧录（后台线程跑）。参数：path / verify / backup / run。"""
+    global _FLASH
+    import threading as _th
+    import time as _t
+
+    p = payload or {}
+    if _FLASH.get("running"):
+        return JSONResponse({"ok": False, "message": "已经在烧录了，等它跑完"})
+    path = str(p.get("path") or "").strip()
+    if not path:
+        return JSONResponse({"ok": False, "message": "请先选一个 .hex 固件"})
+    hexfile = Path(path)
+    if not hexfile.exists():
+        return JSONResponse({"ok": False, "message": f"找不到固件文件：{path}"})
+
+    a = _serial()
+    if not a.is_open:
+        return JSONResponse({"ok": False, "message": "串口还没打开 —— 先在「串口连接」里打开再烧录"})
+
+    verify = bool(p.get("verify", True))
+    backup = bool(p.get("backup", True))
+    run = bool(p.get("run", True))
+    boot_preset = str(p.get("boot_preset") or "dtr_low_rts_high_boot")
+
+    _FLASH = {"running": True, "stage": "准备", "message": "正在进入 BootLoader…",
+              "written": 0, "total": 0, "ok": None, "report": "", "hex": str(hexfile),
+              "backup": "", "started_at": _t.time()}
+
+    def worker():
+        from ..stm32_isp import flash_via_assistant
+        global _FLASH
+        try:
+            _FLASH["message"] = "已暂停串口读取，开始烧录…"
+            log_lines = []
+
+            def log(m):
+                log_lines.append(str(m))
+                _FLASH["message"] = str(m)[:160]
+                if "擦除" in str(m):
+                    _FLASH["stage"] = "擦除"
+                elif "写入完成" in str(m):
+                    _FLASH["stage"] = "写入"
+                elif "备份" in str(m):
+                    _FLASH["stage"] = "备份"
+
+            a.pause_reader()
+            rep = flash_via_assistant(a, hexfile, verify=verify, backup=backup, run=run,
+                                      boot_preset=boot_preset,
+                                      backup_dir=REPO_ROOT / "out")
+            _FLASH.update({"running": False, "ok": rep.ok, "report": rep.text(),
+                           "backup": rep.backup_path, "written": rep.written,
+                           "total": rep.total_bytes, "stage": "完成" if rep.ok else "失败",
+                           "message": ("烧录成功" if rep.ok else "烧录失败：" + str(rep.error)[:120])})
+        except Exception as e:
+            _FLASH.update({"running": False, "ok": False, "stage": "失败",
+                           "message": f"烧录出错：{type(e).__name__}: {e}"})
+        finally:
+            try:
+                a.resume_reader()
+            except Exception:
+                pass
+
+    _th.Thread(target=worker, name="固件烧录", daemon=True).start()
+    return JSONResponse({"ok": True, "message": f"已开始烧录：{hexfile.name}",
+                         "state": dict(_FLASH)})
+
+
 @app.get("/api/serial/ports")
 def api_serial_ports() -> JSONResponse:
     """可用串口列表（顺带告诉前端 pyserial 装了没）。"""

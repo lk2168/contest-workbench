@@ -594,6 +594,34 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
                         </p>
                         <div id="serProbeResult" style="margin-top:var(--s3)"></div>
                       </div>
+            <div class="card">
+              <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+                <h3>固件烧录（STM32 串口 ISP）</h3>
+                <span class="muted" style="font-size:12px" id="flashState">就绪</span>
+              </div>
+              <div class="row-actions">
+                <select id="flashHex" style="min-width:240px"></select>
+                <button class="ghost" id="btnFlashScan">重新扫描</button>
+                <button class="ghost" id="btnFlashUpload">上传 .hex</button>
+                <input type="file" id="flashFile" accept=".hex" hidden>
+              </div>
+              <div class="row-actions" style="margin-top:var(--s3)">
+                <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+                  <input type="checkbox" id="flashVerify" checked> 烧完校验
+                </label>
+                <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+                  <input type="checkbox" id="flashBackup" checked> 烧前备份原固件
+                </label>
+                <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+                  <input type="checkbox" id="flashRun" checked> 烧完运行
+                </label>
+                <button class="primary" id="btnFlashStart">开始烧录</button>
+              </div>
+              <div class="muted" id="flashMsg" style="font-size:12.5px;margin-top:var(--s2)">
+                不用仿真器也能烧：走芯片内置 BootLoader（会自动复位进 BootLoader、烧完复位运行）。
+              </div>
+              <div id="flashReport" style="margin-top:var(--s2)"></div>
+            </div>
           </details>
 
         </div>
@@ -1309,6 +1337,7 @@ function mountSerial(host){
   loadLines();
   loadFrames();
   loadQuick();
+  loadHexList();
 }
 /* 面板当前是否可见（独立视图 或 电赛专区tab） */
 function serialVisible(){ return !$("viewSerial").hidden || !$("panelSerial").hidden; }
@@ -1574,6 +1603,76 @@ if($("btnSerPeriodicStop")) $("btnSerPeriodicStop").addEventListener("click",()=
 if($("btnSerQuickAdd")) $("btnSerQuickAdd").addEventListener("click",addQuick);
 if($("btnSerCkCalc")) $("btnSerCkCalc").addEventListener("click",()=>checksumCalc(false));
 if($("btnSerCkAppend")) $("btnSerCkAppend").addEventListener("click",()=>checksumCalc(true));
+
+/* ── 固件烧录（STM32 串口 ISP）── */
+let FLASH_TIMER = 0;
+async function loadHexList(){
+  try{
+    const d = await (await api("/api/flash/candidates")).json();
+    const items = d.items || [];
+    $("flashHex").innerHTML = items.length
+      ? items.map(x=>`<option value="${esc(x.path)}">${esc(x.path.split("\\").pop())} · ${esc(x.mtime)}</option>`).join("")
+      : '<option value="">（没找到 .hex，点「上传 .hex」或先在 Keil 里编译）</option>';
+  }catch(e){ /* 忽略 */ }
+}
+function flashState(st){
+  st = st || {};
+  if(st.running){
+    const pct = st.total ? Math.round(st.written / st.total * 100) : 0;
+    $("flashState").textContent = `烧录中… ${st.stage||""}`;
+    $("flashMsg").textContent = st.message || "进行中…";
+    $("flashReport").innerHTML = st.total
+      ? `<div class="readout" style="max-height:60px">写入 ${st.written}/${st.total} 字节（${pct}%）</div>` : "";
+  }else{
+    $("flashState").textContent = st.ok === true ? "烧录成功 ✓" : (st.ok === false ? "烧录失败" : "就绪");
+    $("flashMsg").textContent = st.message || "不用仿真器也能烧：走芯片内置 BootLoader。";
+    if(st.report){
+      $("flashReport").innerHTML = `<div class="article">${md(st.report)}</div>`
+        + (st.backup ? `<p class="muted" style="font-size:12.5px">原固件备份：<code>${esc(st.backup)}</code>
+             （需要时可烧回去）</p>` : "");
+    }
+  }
+}
+async function flashStart(){
+  const path = $("flashHex").value;
+  if(!path){ $("flashMsg").textContent = "先选一个 .hex 固件（或点「上传 .hex」）"; return }
+  try{
+    const d = await (await api("/api/flash/start",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({path, verify:$("flashVerify").checked,
+                            backup:$("flashBackup").checked, run:$("flashRun").checked})})).json();
+    $("flashMsg").textContent = d.message;
+    if(d.ok) startFlashPoll();
+  }catch(e){ $("flashMsg").textContent = "启动失败：" + e.message }
+}
+function startFlashPoll(){
+  if(FLASH_TIMER) return;
+  FLASH_TIMER = setInterval(async()=>{
+    try{
+      const st = await (await api("/api/flash/state")).json();
+      flashState(st);
+      if(!st.running){ clearInterval(FLASH_TIMER); FLASH_TIMER = 0; loadHexList() }
+    }catch(e){ clearInterval(FLASH_TIMER); FLASH_TIMER = 0 }
+  }, 800);
+}
+async function flashUpload(f){
+  const fd = new FormData();
+  fd.append("file", f);
+  $("flashMsg").textContent = "上传中…";
+  try{
+    const r = await fetch("/api/flash/upload", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || "上传失败");
+    $("flashMsg").textContent = d.message;
+    await loadHexList();
+    $("flashHex").value = d.path;
+  }catch(e){ $("flashMsg").textContent = "上传失败：" + e.message }
+}
+if($("btnFlashScan")) $("btnFlashScan").addEventListener("click",loadHexList);
+if($("btnFlashStart")) $("btnFlashStart").addEventListener("click",flashStart);
+if($("btnFlashUpload")) $("btnFlashUpload").addEventListener("click",()=>$("flashFile").click());
+if($("flashFile")) $("flashFile").addEventListener("change",e=>{
+  if(e.target.files && e.target.files[0]) flashUpload(e.target.files[0]);
+});
 
 if($("btnSerFrameUse")) $("btnSerFrameUse").addEventListener("click",()=>useFrame(true));
 if($("btnSerFrameOff")) $("btnSerFrameOff").addEventListener("click",()=>useFrame(false));
