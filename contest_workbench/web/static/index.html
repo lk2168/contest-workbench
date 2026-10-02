@@ -603,6 +603,30 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
                       </div>
             <div class="card">
               <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+                <h3>数据安全与任务记录</h3>
+                <span class="muted" style="font-size:12px" id="safeState">读取中…</span>
+              </div>
+              <p class="muted" style="font-size:12.5px">
+                每次启动会自动备份（升级前 / 距上次超过 24 小时），也可以随时手动备份。
+                出问题能一键恢复到某一份快照 —— <b>恢复前会自动再存一份「恢复前」</b>，
+                所以恢复本身也能回退。下面还能看最近都做了什么（采集/烧录/扫描）。
+              </p>
+              <div class="row-actions">
+                <button class="primary" id="btnSnapNow">立即备份</button>
+                <select id="snapList" style="min-width:210px"></select>
+                <button class="ghost" id="btnSnapRestore">恢复到选中的</button>
+                <button class="ghost" id="btnDiag">导出诊断</button>
+                <button class="ghost" id="btnJournal">刷新记录</button>
+              </div>
+              <div class="muted" id="safeMsg" style="font-size:12.5px;margin-top:var(--s2)"></div>
+              <details class="adv" style="margin-top:var(--s2)">
+                <summary>任务记录（最近 60 条 + 30 天统计）</summary>
+                <div id="journalBox" class="readout" style="max-height:240px;margin-top:var(--s2)"></div>
+              </details>
+            </div>
+
+            <div class="card">
+              <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
                 <h3>参数自动扫描（自动调参）</h3>
                 <span class="muted" style="font-size:12px" id="sweepState">就绪</span>
               </div>
@@ -1380,6 +1404,8 @@ function mountSerial(host){
   loadFrames();
   loadQuick();
   loadHexList();
+  loadSafe();
+  loadJournal();
 }
 /* 面板当前是否可见（独立视图 或 电赛专区tab） */
 function serialVisible(){ return !$("viewSerial").hidden || !$("panelSerial").hidden; }
@@ -1709,6 +1735,68 @@ async function flashUpload(f){
     $("flashHex").value = d.path;
   }catch(e){ $("flashMsg").textContent = "上传失败：" + e.message }
 }
+/* ── 数据安全：备份 / 恢复 / 任务记录 ── */
+async function loadSafe(){
+  try{
+    const d = await (await api("/api/snapshots")).json();
+    $("safeState").textContent = d.份数 ? `${d.份数} 份 · 共 ${d.总大小MB} MB` : "还没有备份";
+    $("snapList").innerHTML = (d.列表 || []).length
+      ? d.列表.map(x=>`<option value="${esc(x.名字)}">${esc(x.时间)} · ${esc(x.原因)} · ${x.大小MB}MB</option>`).join("")
+      : '<option value="">（还没有快照，点「立即备份」）</option>';
+    if(d.上次) $("safeMsg").textContent = `上次备份：${d.上次}　目录：${d.目录}`;
+  }catch(e){ $("safeState").textContent = "读不到快照"; }
+}
+async function snapNow(){
+  $("safeMsg").textContent = "正在备份…";
+  try{
+    const d = await (await api("/api/snapshots/create",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({reason:"手动"})})).json();
+    $("safeMsg").textContent = d.message;
+    await loadSafe();
+  }catch(e){ $("safeMsg").textContent = "备份失败：" + e.message }
+}
+async function snapRestore(){
+  const name = $("snapList").value;
+  if(!name){ $("safeMsg").textContent = "先选一份快照"; return }
+  if(!confirm("恢复会用这份快照覆盖当前数据。\n\n恢复前会自动存一份「恢复前」，所以还能退回。\n确定继续？")) return;
+  $("safeMsg").textContent = "正在恢复…";
+  try{
+    const d = await (await api("/api/snapshots/restore",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name, "确认":true})})).json();
+    $("safeMsg").textContent = d.message;
+    await loadSafe();
+  }catch(e){ $("safeMsg").textContent = "恢复失败：" + e.message }
+}
+async function exportDiag(){
+  try{
+    const d = await (await api("/api/journal/export",{method:"POST"})).json();
+    $("safeMsg").textContent = d.message + (d.path ? "（" + d.path + "）" : "");
+  }catch(e){ $("safeMsg").textContent = "导出失败：" + e.message }
+}
+async function loadJournal(){
+  try{
+    const d = await (await api("/api/journal?n=60")).json();
+    const st = d.统计 || {};
+    const stat = Object.entries(st.各类 || {}).map(([k,v])=>
+        `${k} ${v.次数} 次（成功 ${v.成功}/失败 ${v.失败}）`).join("　·　");
+    const rows = (d.items || []).map(x=>{
+      const 败 = String(x.结果) !== "成功";
+      const tag = 败 ? `<b style="color:var(--err,#c00)">${esc(x.结果)}</b>` : esc(x.结果);
+      return `<div>${esc(x.时间.slice(5))}　${esc(x.类型)}　${tag}　${esc(x.摘要)}`
+        + (x.耗时秒!=null ? `　${x.耗时秒}s` : "")
+        + (x.错误 ? `<br>　　错误（${esc(x.错误类别)}）：${esc(String(x.错误).slice(0,120))}` : "")
+        + `</div>`;
+    }).join("");
+    $("journalBox").innerHTML =
+      (st.总数 ? `<div class="muted">最近 30 天共 ${st.总数} 条：${esc(stat)}</div><hr>` : "")
+      + (rows || '<div class="muted">还没有记录 —— 采数据、烧录、扫参数之后就会出现在这里</div>');
+  }catch(e){ $("journalBox").textContent = "读不到记录：" + e.message }
+}
+if($("btnSnapNow")) $("btnSnapNow").addEventListener("click",snapNow);
+if($("btnSnapRestore")) $("btnSnapRestore").addEventListener("click",snapRestore);
+if($("btnDiag")) $("btnDiag").addEventListener("click",exportDiag);
+if($("btnJournal")) $("btnJournal").addEventListener("click",loadJournal);
+
 /* ── 参数自动扫描 ── */
 let SWEEP_TIMER = 0;
 function sweepState(st){

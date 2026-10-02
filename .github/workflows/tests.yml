@@ -81,6 +81,7 @@ jobs:
         run: python tests/test_stm32_isp.py
           python tests/test_sweep.py
           python tests/test_report_table.py
+          python tests/test_data_safety.py
 
       - name: 命令行空跑（不调用模型）
         run: |

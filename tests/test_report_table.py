@@ -27,6 +27,12 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# ★ 隔离任务记录：别让测试往用户真实的 data/任务记录.jsonl 里写东西
+import os as _os                                                       # noqa: E402
+import tempfile as _tempfile                                           # noqa: E402
+_隔离目录 = _tempfile.mkdtemp(prefix="report-table-")
+_os.environ.setdefault("CONTEST_JOURNAL_FILE", str(Path(_隔离目录) / "记录.jsonl"))
+
 from docx import Document                                              # noqa: E402
 from docx.oxml.ns import qn                                            # noqa: E402
 from docx.shared import Emu                                            # noqa: E402

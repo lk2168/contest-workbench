@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "backend": "native",
+  "rasterEngine": "libreoffice",
+  "source": "saved",
+  "inputPath": "D:\\work\\contest-workbench\\docs\\同类项目调研.docx",
+  "sourceSha256": "a0adba47b63293e0e7bb35634843dc1c92f7965a33c5f78a0684d2d20d45a4a9",
+  "dpi": 120,
+  "pageCount": 4,
+  "images": [
+    {
+      "index": 1,
+      "page": 1,
+      "path": "D:\\work\\contest-workbench\\docs\\preview-调研\\page-0001.png",
+      "width": 993,
+      "height": 1404,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 793.7333333333333,
+        "height": 1122.5333333333333
+      },
+      "byteLength": 126424
+    }
+  ],
+  "missingFonts": [
+    "Courier"
+  ]
+}

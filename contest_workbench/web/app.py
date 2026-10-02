@@ -199,6 +199,88 @@ def _serial():
     return _SERIAL
 
 
+# ── 数据安全：任务记录 + 数据快照 ────────────────────────────────────────
+@app.on_event("startup")
+def _启动时检查快照() -> None:
+    """每次启动检查一次：版本变了（升级前）或距上次超过 24 小时（每日）就自动快照。
+
+    ★ 这里刻意**不抛异常**：快照失败绝不能拦住应用启动。
+    """
+    try:
+        from .. import journal, snapshot
+        r = snapshot.启动时检查()
+        if r.get("做了"):
+            journal.记录(journal.类型_快照, f"启动时自动快照（{r.get('原因')}）",
+                         详情={"名字": r.get("名字")})
+    except Exception:
+        pass
+
+
+@app.get("/api/snapshots")
+def api_snapshots() -> JSONResponse:
+    """数据快照总览（几份、多大、上次什么时候、目录在哪）。"""
+    from .. import snapshot
+    return JSONResponse(snapshot.快照总览())
+
+
+@app.post("/api/snapshots/create")
+def api_snapshot_create(payload: dict) -> JSONResponse:
+    """立即备份一份（原因可选，默认「手动」）。"""
+    from .. import journal, snapshot
+    p = payload or {}
+    原因 = str(p.get("reason") or "手动")
+    r = snapshot.建快照(原因)
+    if r.get("ok"):
+        journal.记录(journal.类型_快照, f"手动备份（{原因}）",
+                     详情={"名字": r["名字"], "文件数": r["文件数"]},
+                     耗时=None)
+        return JSONResponse({"ok": True, "message": r["消息"], "名字": r["名字"],
+                             "总览": snapshot.快照总览()})
+    return JSONResponse({"ok": False, "message": r.get("消息", "[错误] 备份失败")})
+
+
+@app.post("/api/snapshots/restore")
+def api_snapshot_restore(payload: dict) -> JSONResponse:
+    """把数据恢复回某一份快照。
+
+    ★ 需要显式确认（`{"name": ..., "确认": true}`）—— 这会覆盖用户数据。
+    ★ 恢复前会先自动存一份「恢复前」，所以恢复本身也能回退。
+    """
+    from .. import journal, snapshot
+    p = payload or {}
+    名 = str(p.get("name") or "")
+    if not 名:
+        return JSONResponse({"ok": False, "message": "[错误] 请指定要恢复哪一份快照"})
+    if not p.get("确认"):
+        return JSONResponse({"ok": False, "message": "恢复会覆盖当前数据，需要确认（确认=true）"})
+    消息 = snapshot.恢复(名)
+    ok = not 消息.startswith("[错误]")
+    journal.记录(journal.类型_快照, f"从快照恢复：{名}", 结果="成功" if ok else "失败",
+                 错误="" if ok else 消息)
+    return JSONResponse({"ok": ok, "message": 消息, "总览": snapshot.快照总览()})
+
+
+@app.get("/api/journal")
+def api_journal(n: int = 60, type: str = "") -> JSONResponse:
+    """最近的任务记录 + 30 天统计（可按类型过滤）。"""
+    from .. import journal
+    最近 = journal.最近(max(1, min(500, int(n))), 类型=(type or None))
+    return JSONResponse({"items": 最近, "统计": journal.统计(30),
+                         "文件": str(journal.记录文件()), "总数": len(journal.读全部())})
+
+
+@app.post("/api/journal/export")
+def api_journal_export() -> JSONResponse:
+    """导出诊断文件（中文可读，可以直接发给别人看）。"""
+    from .. import journal
+    try:
+        路径 = journal.导出诊断()
+        return JSONResponse({"ok": True, "path": 路径,
+                             "message": f"诊断已导出：{Path(路径).name}"})
+    except Exception as e:
+        return JSONResponse({"ok": False, "message": f"[错误] 导出失败：{type(e).__name__}: {e}"})
+
+
 # ── 固件烧录（STM32 串口 ISP）────────────────────────────────────────────
 # 后台线程跑烧录（一次 20 秒左右），前端轮询 /api/flash/state 看进度
 _FLASH = {"running": False, "stage": "", "message": "", "written": 0, "total": 0,
@@ -309,6 +391,17 @@ def api_sweep_start(payload: dict) -> JSONResponse:
 
             runner.log = lambda m: _SWEEP.update({"message": m})
             res = runner.run(spec, stop_flag=lambda: _SWEEP_STOP["flag"], on_row=on_row)
+            try:
+                from .. import journal
+                ok数 = len([r for r in res.rows if r.ok])
+                journal.记录(journal.类型_扫描,
+                             f"扫描 {len(spec.values)} 个值（成功 {ok数}）",
+                             结果="成功" if ok数 else "失败",
+                             错误="" if ok数 else "没有可用结果",
+                             详情={"推荐": (f"{res.best.value:g}" if res.best else ""),
+                                   "停止": bool(res.stopped)})
+            except Exception:
+                pass
             _SWEEP.update({
                 "running": False, "stopped": bool(res.stopped),
                 "rows": [r.brief() for r in res.rows],
@@ -404,6 +497,17 @@ def api_flash_start(payload: dict) -> JSONResponse:
             rep = flash_via_assistant(a, hexfile, verify=verify, backup=backup, run=run,
                                       boot_preset=boot_preset,
                                       backup_dir=REPO_ROOT / "out")
+            try:
+                from .. import journal
+                journal.记录(journal.类型_烧录,
+                             f"烧录 {Path(str(hexfile)).name}",
+                             结果="成功" if rep.ok else "失败",
+                             耗时=_t.time() - _FLASH.get("started_at", _t.time()),
+                             错误="" if rep.ok else str(rep.error),
+                             详情={"芯片": rep.pid_hex if hasattr(rep, "pid_hex") else "",
+                                   "字节": rep.written, "备份": rep.backup_path})
+            except Exception:
+                pass
             _FLASH.update({"running": False, "ok": rep.ok, "report": rep.text(),
                            "backup": rep.backup_path, "written": rep.written,
                            "total": rep.total_bytes, "stage": "完成" if rep.ok else "失败",
