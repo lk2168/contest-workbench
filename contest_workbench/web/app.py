@@ -207,6 +207,12 @@ def _启动时检查快照() -> None:
     ★ 这里刻意**不抛异常**：快照失败绝不能拦住应用启动。
     """
     try:
+        from .. import demo
+        if demo.已开启():                 # 试用包里的「演示模式.bat」就是设这个环境变量
+            print(demo.安装(), flush=True)
+    except Exception:
+        pass
+    try:
         from .. import journal, snapshot
         r = snapshot.启动时检查()
         if r.get("做了"):

@@ -1406,6 +1406,7 @@ function mountSerial(host){
   loadHexList();
   loadSafe();
   loadJournal();
+  sweepLoadOnce();
 }
 /* 面板当前是否可见（独立视图 或 电赛专区tab） */
 function serialVisible(){ return !$("viewSerial").hidden || !$("panelSerial").hidden; }
@@ -1712,6 +1713,13 @@ async function flashStart(){
     if(d.ok) startFlashPoll();
   }catch(e){ $("flashMsg").textContent = "启动失败：" + e.message }
 }
+async function sweepLoadOnce(){
+  // ★ 刷新页面后把上一次的扫描结果还回来（否则结果白跑了，用户会以为丢了）
+  try{
+    const st = await (await api("/api/sweep/state")).json();
+    if(st.table || st.running) sweepState(st);
+  }catch(e){ /* 忽略 */ }
+}
 function startFlashPoll(){
   if(FLASH_TIMER) return;
   FLASH_TIMER = setInterval(async()=>{
@@ -1808,6 +1816,9 @@ function sweepState(st){
   }else{
     $("sweepState").textContent = st.table ? "扫描完成" : "就绪";
     if(st.table){
+      // ★ 有结果就把这一栏展开 —— 用户跑完扫描刷新页面，应该一眼看到结果
+      const fold = $("sweepResult").closest("details");
+      if(fold) fold.open = true;
       $("sweepResult").innerHTML =
         `<div class="note"><span>${esc(st.advice || "")}</span></div>` +
         `<div class="article" style="margin-top:var(--s2)">${md(st.table)}</div>` +

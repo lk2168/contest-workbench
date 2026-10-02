@@ -123,7 +123,14 @@ def list_ports() -> list[dict]:
                 "hwid": str(getattr(p, "hwid", "") or ""),
             })
         return out
-    except Exception:
+    except Exception as e:
+        # ★ 不无声吞掉：串口枚举失败也要留个痕，否则"列表是空的"根本查不出原因
+        try:
+            from . import journal
+            journal.记录(journal.类型_系统, "列串口失败", 结果="失败",
+                         错误=f"{type(e).__name__}: {e}")
+        except Exception:
+            pass
         return []
 
 

@@ -11,6 +11,27 @@
 [![Release](https://img.shields.io/github/v/release/lk2168/contest-workbench?label=release&color=blue)](https://github.com/lk2168/contest-workbench/releases/latest)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 
+---
+
+![参数自动扫描：发参数 → 采数据 → 算指标 → 出一张对比表和一句推荐](docs/images/参数扫描-效果.png)
+
+## 三步看到效果（不用装 Python、不用 API Key）
+
+1. 下载 [**试用包**](https://github.com/lk2168/contest-workbench/releases/latest) → 解压
+2. 双击 **`演示模式.bat`** —— 它会开一个虚拟串口，**不需要真板子**
+3. 界面里：**电赛 → 串口采数** → 拉到底「**进阶工具**」→「**参数自动扫描**」
+   → 命令填 `KP={value}`，值填 `0.5:2.0:0.5` → 点「开始扫描」
+   → 几秒后出来一张对比表和一句 **「推荐 1.5：超调 8.1%，且调节时间最短」**
+
+> **有真板子的话**：串口连接里选你的端口 → 打开串口；
+> 「数据 → 指标」把采到的数据算成超调量/上升时间/调节时间（也可以直接读 CSV，不用板子）；
+> 「固件烧录」**不用仿真器也能烧 STM32**（走芯片内置 BootLoader，烧前自动备份原固件、烧完逐字节读回校验）。
+> 只有要用 AI 分析赛题时，才需要在「设置」里填一个模型 API Key（支持 8 家供应商，含本地 Ollama）。
+
+---
+
+
+
 **给谁用**：参加电赛的在校学生，尤其是不熟悉 AI 工具的人。有网页界面、**队友零安装**就能用；
 Agent 每一步在做什么都显示出来；关键指标由本地算法计算、可以自己复核。
 
