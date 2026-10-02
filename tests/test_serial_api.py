@@ -276,6 +276,100 @@ def main() -> int:
     except Exception:
         pass
 
+    print("\n== ⑫ 参数自动扫描接口 ==")
+    webapp._SERIAL = SerialAssistant()
+    d = client.get("/api/sweep/state").json()
+    check("扫描状态接口字段齐全",
+          {"running", "i", "total", "rows", "table", "advice"} <= set(d), str(list(d))[:90])
+    r = client.post("/api/sweep/stop").json()
+    check("没在扫描时点停止 → 说明情况", "没有在扫描" in r["message"], r["message"][:40])
+
+    r = client.post("/api/sweep/start", json={"values": "0.5,1.0"}).json()
+    check("串口没打开就扫描 → 拒绝并说清", r["ok"] is False and "打开" in r["message"],
+          r["message"][:60])
+
+    # 打开假串口后，校验参数解析与模板
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent))
+    from test_serial import 造后端, set_serial_backend        # 复用那边的"像 pyserial 的假后端"
+    _后端 = 造后端()
+    _旧 = set_serial_backend(_后端)
+    try:
+        a = webapp._serial()
+        a.open("COM7")
+        r = client.post("/api/sweep/start", json={"values": ""}).json()
+        check("值为空 → 拒绝并给示例", r["ok"] is False and "空" in r["message"], r["message"][:60])
+        r = client.post("/api/sweep/start", json={"values": "abc"}).json()
+        check("值不是数字 → 拒绝", r["ok"] is False and "不是数字" in r["message"], r["message"][:60])
+        r = client.post("/api/sweep/start",
+                        json={"values": "1,2", "template": "KP=1"}).json()
+        check("★ 命令模板没写 {value} → 拒绝（免得白等一轮）",
+              r["ok"] is False and "{value}" in r["message"], r["message"][:70])
+
+        print("\n== ⑬ 环路模拟端到端：真接口 + 假串口 + 模拟被控对象 ==")
+        import math
+        import threading
+        import time as _t
+
+        def 造阶跃(kp, target=1.0, dt=0.02, n=200):
+            wn, zeta = 1.0 + 1.5 * kp, max(0.1, 1.0 - 0.25 * kp)
+            wd = wn * math.sqrt(max(1e-9, 1 - zeta ** 2))
+            out = []
+            for i in range(n):
+                tt = i * dt
+                y = target * (1 - math.exp(-zeta * wn * tt) *
+                              (math.cos(wd * tt) + (zeta * wn / wd) * math.sin(wd * tt)))
+                out.append(f"{tt:.3f},{y:.5f}")
+            return "\n".join(out) + "\n"
+
+        停 = threading.Event()
+
+        def 模拟设备():
+            """盯着假串口的写入；看到 KP=<v> 就把对应的一段阶跃"吐"回去。"""
+            ser = a._ser
+            done = b""
+            while not 停.is_set():
+                data = bytes(ser.收到的写入)
+                if len(data) > len(done):
+                    new = data[len(done):].decode("utf-8", "replace")
+                    done = data
+                    for line in new.splitlines():
+                        if line.startswith("KP="):
+                            try:
+                                v = float(line.split("=", 1)[1])
+                            except ValueError:
+                                continue
+                            a.feed_text(造阶跃(v))
+                _t.sleep(0.03)
+
+        th = threading.Thread(target=模拟设备, daemon=True)
+        th.start()
+        try:
+            r = client.post("/api/sweep/start",
+                            json={"values": "0.5:2.0:0.5", "template": "KP={value}",
+                                  "collect_s": 0.6, "settle_s": 0.2, "target": 1.0}).json()
+            check("扫描启动成功", r["ok"] is True, str(r)[:90])
+            st = {}
+            for _ in range(120):                       # 最多等 24 秒
+                st = client.get("/api/sweep/state").json()
+                if not st["running"]:
+                    break
+                _t.sleep(0.2)
+            check("★ 扫描跑完（4 个值）", not st["running"] and st["i"] == 4,
+                  f"i={st.get('i')} running={st.get('running')}")
+            check("★ 每个值都采到数据并算出指标",
+                  len([l for l in st["rows"] if "超调" in l]) == 4, str(st["rows"])[:120])
+            check("★ 出了对比表（含推荐标记）",
+                  "★ 推荐" in st["table"] and "超调" in st["table"], st["table"][:80])
+            check("★ 推荐值不超标（模拟对象 KP=2.5 才超标，这里最大 2.0）",
+                  "没有参数满足" not in st["advice"], st["advice"][:70])
+            check("推荐理由是人话", "推荐" in st["advice"], st["advice"][:70])
+        finally:
+            停.set()
+            a.close()
+    finally:
+        set_serial_backend(_旧)
+
     print("\n== ⑫ 关闭 ==")
     r = client.post("/api/serial/close").json()
     check("关闭串口 → ok", r["ok"] is True, str(r)[:60])

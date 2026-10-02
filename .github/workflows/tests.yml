@@ -79,6 +79,7 @@ jobs:
       # STM32 串口 ISP（用假 BootLoader，不需要硬件）
       - name: STM32 ISP（离线）
         run: python tests/test_stm32_isp.py
+          python tests/test_sweep.py
 
       - name: 命令行空跑（不调用模型）
         run: |

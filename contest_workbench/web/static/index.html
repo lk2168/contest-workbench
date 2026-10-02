@@ -596,6 +596,39 @@ footer .wrap{display:flex;gap:var(--s5);flex-wrap:wrap;align-items:center}
                       </div>
             <div class="card">
               <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
+                <h3>参数自动扫描（自动调参）</h3>
+                <span class="muted" style="font-size:12px" id="sweepState">就绪</span>
+              </div>
+              <div class="row-actions">
+                <input id="sweepTpl" value="KP={value}" placeholder="参数命令模板，如 KP={value}"
+                       style="min-width:190px">
+                <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+                  <input type="checkbox" id="sweepHex"> HEX
+                </label>
+                <input id="sweepValues" placeholder="要扫的值：0.5,1.0,1.5 或 0.5:2.0:0.25"
+                       style="flex:1;min-width:170px">
+              </div>
+              <div class="row-actions" style="margin-top:var(--s3)">
+                <input id="sweepTrigger" placeholder="触发命令（可选，如 START）" style="min-width:140px">
+                <input id="sweepCollect" type="number" value="6" min="1" style="width:70px"
+                       title="每轮采样秒数">
+                <span class="muted" style="font-size:12.5px;align-self:center">秒/轮</span>
+                <input id="sweepTarget" placeholder="目标值（可选）" style="width:110px">
+                <input id="sweepRepeats" type="number" value="1" min="1" max="10" style="width:60px"
+                       title="每个值重复几次">
+                <span class="muted" style="font-size:12.5px;align-self:center">次/值</span>
+                <button class="primary" id="btnSweepStart">开始扫描</button>
+                <button class="ghost" id="btnSweepStop">停止</button>
+              </div>
+              <p class="muted" style="font-size:12.5px;margin-top:var(--s2)">
+                自动跑一圈：发参数 → 等生效 → 采数据 → 算指标（超调/上升/调节时间）→
+                出对比表并推荐一个值。指标全部由本地确定性算法算出，可复核。
+              </p>
+              <div id="sweepResult" style="margin-top:var(--s2)"></div>
+            </div>
+
+            <div class="card">
+              <div class="head" style="display:flex;justify-content:space-between;align-items:baseline">
                 <h3>固件烧录（STM32 串口 ISP）</h3>
                 <span class="muted" style="font-size:12px" id="flashState">就绪</span>
               </div>
@@ -1667,6 +1700,55 @@ async function flashUpload(f){
     $("flashHex").value = d.path;
   }catch(e){ $("flashMsg").textContent = "上传失败：" + e.message }
 }
+/* ── 参数自动扫描 ── */
+let SWEEP_TIMER = 0;
+function sweepState(st){
+  st = st || {};
+  if(st.running){
+    $("sweepState").textContent = `扫描中 ${st.i||0}/${st.total||0}`;
+    const lines = (st.rows || []).map(esc).join("<br>");
+    $("sweepResult").innerHTML = `<div class="readout" style="max-height:130px">${lines || "采集中…"}</div>`;
+  }else{
+    $("sweepState").textContent = st.table ? "扫描完成" : "就绪";
+    if(st.table){
+      $("sweepResult").innerHTML =
+        `<div class="note"><span>${esc(st.advice || "")}</span></div>` +
+        `<div class="article" style="margin-top:var(--s2)">${md(st.table)}</div>` +
+        (st.stopped ? '<p class="muted" style="font-size:12.5px">（中途停止过，结果只含已采到的部分）</p>' : "");
+    }else if(st.message){
+      $("sweepResult").innerHTML = `<span class="muted">${esc(st.message)}</span>`;
+    }
+  }
+}
+async function sweepStart(){
+  const body = {values: $("sweepValues").value, template: $("sweepTpl").value,
+                hex_mode: $("sweepHex").checked, trigger: $("sweepTrigger").value,
+                collect_s: parseFloat($("sweepCollect").value) || 6,
+                target: $("sweepTarget").value,
+                repeats: parseInt($("sweepRepeats").value, 10) || 1};
+  try{
+    const d = await (await api("/api/sweep/start",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)})).json();
+    if(!d.ok){ $("sweepResult").innerHTML = `<span class="muted">${esc(d.message)}</span>`; return }
+    sweepState(d.state);
+    if(!SWEEP_TIMER) SWEEP_TIMER = setInterval(async()=>{
+      try{
+        const st = await (await api("/api/sweep/state")).json();
+        sweepState(st);
+        if(!st.running){ clearInterval(SWEEP_TIMER); SWEEP_TIMER = 0 }
+      }catch(e){ clearInterval(SWEEP_TIMER); SWEEP_TIMER = 0 }
+    }, 700);
+  }catch(e){ $("sweepResult").innerHTML = `<div class="note err"><span>${esc(e.message)}</span></div>` }
+}
+async function sweepStop(){
+  try{
+    const d = await (await api("/api/sweep/stop",{method:"POST"})).json();
+    $("sweepState").textContent = d.message;
+  }catch(e){ /* 忽略 */ }
+}
+if($("btnSweepStart")) $("btnSweepStart").addEventListener("click",sweepStart);
+if($("btnSweepStop")) $("btnSweepStop").addEventListener("click",sweepStop);
+
 if($("btnFlashScan")) $("btnFlashScan").addEventListener("click",loadHexList);
 if($("btnFlashStart")) $("btnFlashStart").addEventListener("click",flashStart);
 if($("btnFlashUpload")) $("btnFlashUpload").addEventListener("click",()=>$("flashFile").click());

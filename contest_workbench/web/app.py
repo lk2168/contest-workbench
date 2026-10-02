@@ -229,6 +229,100 @@ def _flash_candidates() -> list:
              "size": Path(p).stat().st_size if Path(p).exists() else 0} for p, m in out]
 
 
+# ── 参数自动扫描（改参数 → 采数据 → 算指标 → 出表与推荐）────────────────
+_SWEEP = {"running": False, "i": 0, "total": 0, "current": "", "rows": [],
+          "table": "", "advice": "", "stopped": False, "message": "", "best": "",
+          "_lines": []}
+_SWEEP_STOP = {"flag": False}
+
+
+@app.get("/api/sweep/state")
+def api_sweep_state() -> JSONResponse:
+    """扫描进度与结果（前端轮询）。"""
+    return JSONResponse(dict(_SWEEP))
+
+
+@app.post("/api/sweep/stop")
+def api_sweep_stop() -> JSONResponse:
+    """请求停止（当前这一轮采完就收尾，已采到的结果照常返回）。"""
+    if not _SWEEP.get("running"):
+        return JSONResponse({"ok": True, "message": "当前没有在扫描"})
+    _SWEEP_STOP["flag"] = True
+    return JSONResponse({"ok": True, "message": "已请求停止（当前这轮采完就收尾）"})
+
+
+@app.post("/api/sweep/start")
+def api_sweep_start(payload: dict) -> JSONResponse:
+    """开始参数扫描（后台线程跑）。
+
+    参数：values（"0.5,1.0" 或 "0.5:2.0:0.5"）/ template / hex_mode / trigger /
+          settle_s / collect_s / target / repeats
+    """
+    global _SWEEP
+    import threading as _th
+    from ..sweep import AssistantLink, SweepRunner, SweepSpec, SweepError, parse_values
+
+    p = payload or {}
+    if _SWEEP.get("running"):
+        return JSONResponse({"ok": False, "message": "已经在扫描了，先等它跑完或点停止"})
+    a = _serial()
+    if not a.is_open:
+        return JSONResponse({"ok": False, "message": "串口还没打开 —— 先在「串口连接」里打开再扫描"})
+    try:
+        values = parse_values(p.get("values", ""))
+    except SweepError as e:
+        return JSONResponse({"ok": False, "message": str(e)})
+    spec = SweepSpec(values=values, set_template=str(p.get("template") or "KP={value}"),
+                     hex_mode=bool(p.get("hex_mode", False)),
+                     trigger=str(p.get("trigger") or ""),
+                     settle_s=float(p.get("settle_s") or 1.5),
+                     collect_s=float(p.get("collect_s") or 6.0),
+                     target=(None if p.get("target") in (None, "") else float(p["target"])),
+                     repeats=int(p.get("repeats") or 1))
+    # 先干跑一遍命令模板，模板写错就别开始（免得白等一轮）
+    from ..sweep import format_command
+    try:
+        format_command(spec.set_template, values[0], spec.hex_mode)
+    except SweepError as e:
+        return JSONResponse({"ok": False, "message": str(e)})
+
+    _SWEEP_STOP["flag"] = False
+    _SWEEP = {"running": True, "i": 0, "total": len(values) * spec.repeats, "current": "",
+              "rows": [], "table": "", "advice": "", "stopped": False, "best": "",
+              "_lines": [],
+              "message": f"开始扫描 {len(values)} 个值（每个约 {spec.settle_s + spec.collect_s:.1f} 秒）"}
+
+    def worker():
+        global _SWEEP
+        link = AssistantLink(a)
+        link.clear()
+        try:
+            runner = SweepRunner(link)
+
+            def on_row(row, i, total):
+                # 扫描期间**不暂停**读取线程：采数据正需要它把串口字节解析成数据点
+                _SWEEP["i"], _SWEEP["total"] = i, total
+                _SWEEP["current"] = row.brief()
+                _SWEEP["_lines"].append(row.brief())
+                _SWEEP["rows"] = list(_SWEEP["_lines"])
+                _SWEEP["message"] = f"[{i}/{total}] " + row.brief()
+
+            runner.log = lambda m: _SWEEP.update({"message": m})
+            res = runner.run(spec, stop_flag=lambda: _SWEEP_STOP["flag"], on_row=on_row)
+            _SWEEP.update({
+                "running": False, "stopped": bool(res.stopped),
+                "rows": [r.brief() for r in res.rows],
+                "table": res.table_md(), "advice": res.advice,
+                "best": (f"{res.best.value:g}" if res.best else ""),
+                "message": ("扫描完成（已停止）" if res.stopped else "扫描完成"),
+            })
+        except Exception as e:
+            _SWEEP.update({"running": False, "message": f"扫描出错：{type(e).__name__}: {e}"})
+
+    _th.Thread(target=worker, name="参数扫描", daemon=True).start()
+    return JSONResponse({"ok": True, "message": _SWEEP["message"], "state": dict(_SWEEP)})
+
+
 @app.get("/api/flash/candidates")
 def api_flash_candidates() -> JSONResponse:
     """候选固件（最近编译出来的 .hex，按时间倒序）。"""
